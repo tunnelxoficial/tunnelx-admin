@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - TunnelX Admin</title>
+
+    <meta name="theme-color" content="#2563EB">
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+    
+    <!-- Favicon -->
+    <link rel="shortcut icon" href="img/favicon.jpg" type="image/x-icon">
+</head>
+<body>
+    <div class="login-page">
+        <div class="login-card">
+            <div class="login-header">
+                <div class="login-logo">
+                    <img src="img/logo.png" alt="TunnelX Logo" style="height: 60px; margin: 0 auto;">
+                </div>
+                <h2>Bem-vindo de volta</h2>
+                <p style="color: var(--text-light)">Faça login para acessar o painel</p>
+            </div>
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" class="form-control" placeholder="admin@tunnelx.com" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Senha</label>
+                    <input type="password" id="password" class="form-control" placeholder="••••••••" required>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%">Entrar</button>
+            </form>
+             <div style="margin-top: 1.5rem; text-align: center; font-size: 0.875rem;">
+                <p style="color: var(--text-light)">Não tem uma conta? <a href="register.html" style="color: var(--primary-color); font-weight: 600;">Registre-se</a></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals support -->
+    <div id="modal-container"></div>
+
+    <script src="js/api.js"></script>
+    <script src="js/main.js"></script>
+    <script>
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const btn = e.target.querySelector('button');
+            
+            try {
+                btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Entrando...';
+                btn.disabled = true;
+
+                await Auth.login(email, password);
+                window.location.href = 'index.html';
+
+            } catch (error) {
+                Modal.show({
+                    title: 'Erro de Login',
+                    content: error.message,
+                    type: 'danger',
+                    confirmText: 'Tentar novamente'
+                });
+            } finally {
+                btn.innerHTML = 'Entrar';
+                btn.disabled = false;
+            }
+        });
+        
+        // Check if already logged in
+        if (Auth.isAuthenticated()) {
+            window.location.href = 'index.html';
+        }
+    </script>
+</body>
+</html>

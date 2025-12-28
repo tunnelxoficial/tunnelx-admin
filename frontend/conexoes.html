@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conexões - TunnelX Admin</title>
+
+    <meta name="theme-color" content="#2563EB">
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+    
+    <!-- Favicon -->
+    <link rel="shortcut icon" href="img/favicon.jpg" type="image/x-icon">
+</head>
+<body>
+    <div id="app"></div>
+
+    <script src="js/api.js"></script>
+    <script src="js/main.js"></script>
+    <script>
+        // Data Management - Now using API
+        async function fetchConnections() {
+            try {
+                return await Connections.getAll();
+            } catch (error) {
+                console.error('Failed to fetch connections', error);
+                return [];
+            }
+        }
+
+        // Render Page
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                const content = document.getElementById('page-content');
+                if (!content) return;
+
+                content.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                        <div class="search-box" style="display: flex; gap: 0.5rem;">
+                            <!-- Search could be added here -->
+                        </div>
+                        <button class="btn btn-primary" id="btn-add">
+                            <i class="fa-solid fa-plus"></i> Nova Conexão
+                        </button>
+                    </div>
+
+                    <div class="table-container">
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Nome</th>
+                                        <th>CPF</th>
+                                        <th>Telefone</th>
+                                        <th>Pacote</th>
+                                        <th>Conexões</th>
+                                        <th>Status</th>
+                                        <th>Internet</th>
+                                        <th style="text-align: right;">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="connections-table-body">
+                                    <tr><td colspan="8" style="text-align: center; padding: 2rem;">Carregando...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+
+                refreshTable();
+                
+                document.getElementById('btn-add').addEventListener('click', () => openModal());
+
+            }, 100);
+        });
+
+        // Table Logic
+        async function refreshTable() {
+            const tbody = document.getElementById('connections-table-body');
+            if (!tbody) return;
+
+            try {
+                const connections = await fetchConnections();
+                
+                if (connections.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-light); padding: 2rem;">Nenhuma conexão encontrada.</td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = connections.map(conn => `
+                    <tr>
+                        <td>
+                            <div style="font-weight: 500;">${conn.name}</div>
+                            <div style="font-size: 0.75rem; color: var(--text-light);">${conn.email}</div>
+                        </td>
+                        <td>${conn.cpf}</td>
+                        <td>${conn.phone}</td>
+                        <td>
+                            <span class="badge badge-success">${conn.data_limit} MB</span>
+                        </td>
+                         <td>
+                            <span style="font-weight: 500;">${conn.total_connections}</span>
+                        </td>
+                        <td>
+                            <span class="badge ${conn.status === 'active' ? 'badge-success' : 'badge-danger'}">
+                                ${conn.status === 'active' ? 'Ativo' : 'Inativo'}
+                            </span>
+                        </td>
+                        <td>
+                            <i class="fa-solid ${conn.internet ? 'fa-globe' : 'fa-ban'}" 
+                               style="color: ${conn.internet ? 'var(--secondary-color)' : 'var(--danger-color)'}; margin-left: 0.5rem;"
+                               title="${conn.internet ? 'Internet Ativa' : 'Internet Bloqueada'}"></i>
+                        </td>
+                        <td style="text-align: right;">
+                            <button class="btn btn-sm btn-secondary" onclick="toggleInternet(${conn.id})" title="${conn.internet ? 'Bloquear Internet' : 'Desbloquear Internet'}">
+                                <i class="fa-solid ${conn.internet ? 'fa-lock' : 'fa-lock-open'}"></i>
+                            </button>
+                            <button class="btn btn-sm btn-secondary" onclick="openModal(${conn.id})" title="Editar">
+                                <i class="fa-solid fa-pen"></i>
+                            </button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteConnection(${conn.id})" title="Excluir">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--danger-color); padding: 2rem;">Erro ao carregar dados.</td></tr>`;
+            }
+        }
+
+        // Actions
+        window.openModal = async (id = null) => {
+            let conn = { 
+                name: '', 
+                cpf: '', 
+                phone: '', 
+                email: '', 
+                total_connections: 1, 
+                data_limit: 5, // Default 5MB
+                status: 'active', 
+                internet: true 
+            };
+            
+            if (id) {
+                const connections = await fetchConnections();
+                const found = connections.find(c => c.id === id);
+                if (found) conn = found;
+            }
+            
+            const isEdit = !!id;
+
+            const formHTML = `
+                <form id="connection-form">
+                    <div class="form-group">
+                        <label>Nome Completo</label>
+                        <input type="text" name="name" class="form-control" value="${conn.name}" required>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div class="form-group">
+                            <label>CPF</label>
+                            <input type="text" name="cpf" class="form-control" value="${conn.cpf}" required placeholder="000.000.000-00" maxlength="14" oninput="this.value = Masks.cpf(this.value)">
+                        </div>
+                        <div class="form-group">
+                            <label>Telefone</label>
+                            <input type="text" name="phone" class="form-control" value="${conn.phone}" required placeholder="(00) 00000-0000" maxlength="15" oninput="this.value = Masks.phone(this.value)">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email" name="email" class="form-control" value="${conn.email}" required>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div class="form-group">
+                            <label>Total de Conexões</label>
+                            <input type="number" name="total_connections" class="form-control" value="${conn.total_connections}" min="1" max="100" required>
+                        </div>
+                         <div class="form-group">
+                            <label>Status</label>
+                            <select name="status" class="form-control">
+                                <option value="active" ${conn.status === 'active' ? 'selected' : ''}>Ativo</option>
+                                <option value="inactive" ${conn.status !== 'active' ? 'selected' : ''}>Inativo</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Pacote de Dados (MB)</label>
+                        <input type="number" name="data_limit" max="1000" class="form-control" value="${conn.data_limit}" min="1" placeholder="Ex: 1000" required>
+                    </div>
+                </form>
+            `;
+
+            Modal.show({
+                title: isEdit ? 'Editar Conexão' : 'Nova Conexão',
+                content: formHTML,
+                confirmText: 'Salvar',
+                onConfirm: async () => {
+                    const form = document.getElementById('connection-form');
+                    
+                    const payload = {
+                        name: form.querySelector('[name="name"]').value,
+                        cpf: form.querySelector('[name="cpf"]').value,
+                        phone: form.querySelector('[name="phone"]').value,
+                        email: form.querySelector('[name="email"]').value,
+                        total_connections: parseInt(form.querySelector('[name="total_connections"]').value),
+                        data_limit: parseInt(form.querySelector('[name="data_limit"]').value),
+                        status: form.querySelector('[name="status"]').value
+                    };
+
+                    try {
+                        if (isEdit) {
+                            await Connections.update(id, payload);
+                        } else {
+                            await Connections.create(payload);
+                        }
+                        refreshTable();
+                    } catch (error) {
+                        alert('Erro ao salvar: ' + error.message);
+                    }
+                }
+            });
+        };
+
+        window.deleteConnection = (id) => {
+            Modal.show({
+                title: 'Excluir Conexão',
+                content: '<p>Tem certeza que deseja excluir esta conexão? Esta ação não pode ser desfeita.</p>',
+                confirmText: 'Excluir',
+                type: 'danger',
+                onConfirm: async () => {
+                    try {
+                        await Connections.delete(id);
+                        refreshTable();
+                    } catch (error) {
+                        alert('Erro ao excluir: ' + error.message);
+                    }
+                }
+            });
+        };
+
+        window.toggleInternet = (id) => {
+             // We need to fetch current state or pass it. 
+             // Ideally UI should reflect state optimistically or re-fetch.
+             // For now, let's just call toggle.
+             
+            Modal.show({
+                title: 'Alterar Acesso à Internet',
+                content: `<p>Deseja alterar o status de internet desta conexão?</p>`,
+                confirmText: 'Confirmar',
+                type: 'primary',
+                onConfirm: async () => {
+                    try {
+                        await Connections.toggleInternet(id);
+                        refreshTable();
+                    } catch (error) {
+                        alert('Erro ao alterar internet: ' + error.message);
+                    }
+                }
+            });
+        };
+    </script>
+</body>
+</html>
