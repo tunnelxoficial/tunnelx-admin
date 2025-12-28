@@ -60,6 +60,14 @@ const Connection = sequelize.define('Connection', {
             model: 'Clients',
             key: 'id'
         }
+    },
+    PlanId: {
+        type: DataTypes.INTEGER,
+        references: {
+            model: 'Plans',
+            key: 'id'
+        },
+        allowNull: true
     }
 }, {
     timestamps: true

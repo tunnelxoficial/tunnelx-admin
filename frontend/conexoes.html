@@ -117,6 +117,7 @@
         // Data Management
         let cachedClients = [];
         let cachedConnections = [];
+        let cachedPlans = [];
 
         async function fetchConnections() {
             try {
@@ -137,9 +138,18 @@
             }
         }
 
+        async function preloadPlans() {
+            try {
+                cachedPlans = await Plans.getAll();
+            } catch (err) {
+                console.error('Erro ao pré-carregar planos', err);
+            }
+        }
+
         // Render Page
         document.addEventListener('DOMContentLoaded', () => {
             preloadClients();
+            preloadPlans();
 
             setTimeout(() => {
                 const content = document.getElementById('page-content');
@@ -161,7 +171,7 @@
                                 <thead>
                                     <tr>
                                         <th>Nome</th>
-                                        <th>CPF</th>
+                                        <th>Plano</th>
                                         <th>Telefone</th>
                                         <th>Pacote</th>
                                         <th>Conexões</th>
@@ -172,7 +182,7 @@
                                     </tr>
                                 </thead>
                                 <tbody id="connections-table-body">
-                                    <tr><td colspan="8" style="text-align: center; padding: 2rem;">Carregando...</td></tr>
+                                    <tr><td colspan="9" style="text-align: center; padding: 2rem;">Carregando...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -306,7 +316,7 @@
                 const connections = await fetchConnections();
                 
                 if (connections.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-light); padding: 2rem;">Nenhuma conexão encontrada.</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-light); padding: 2rem;">Nenhuma conexão encontrada.</td></tr>`;
                     return;
                 }
 
@@ -316,7 +326,7 @@
                             <div style="font-weight: 500;">${conn.name}</div>
                             <div style="font-size: 0.75rem; color: var(--text-light);">${conn.email}</div>
                         </td>
-                        <td>${conn.cpf}</td>
+                        <td>${conn.Plan ? conn.Plan.name : '-'}</td>
                         <td>${conn.phone}</td>
                         <td>
                             <span class="badge badge-success">${conn.data_limit} MB</span>
@@ -351,7 +361,7 @@
                     </tr>
                 `).join('');
             } catch (error) {
-                tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--danger-color); padding: 2rem;">Erro ao carregar dados.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--danger-color); padding: 2rem;">Erro ao carregar dados.</td></tr>`;
             }
         }
 
@@ -437,10 +447,70 @@
             if (options) options.classList.remove('show');
         };
 
+        // UI Helpers for Plan Select
+        window.togglePlanSelect = () => {
+            const options = document.getElementById('plan-select-options');
+            if (!options) return;
+            
+            const isShowing = options.classList.contains('show');
+            if (isShowing) {
+                options.classList.remove('show');
+            } else {
+                options.classList.add('show');
+                const input = options.querySelector('.search-select-input');
+                if (input) setTimeout(() => input.focus(), 50);
+                
+                const closeHandler = (e) => {
+                    if (!e.target.closest('#plan-select')) {
+                        options.classList.remove('show');
+                        document.removeEventListener('click', closeHandler);
+                    }
+                };
+                setTimeout(() => document.addEventListener('click', closeHandler), 0);
+            }
+        };
+
+        window.renderPlanOptions = (filter = '', selectedId = null) => {
+            const plans = cachedPlans || [];
+            const filtered = plans.filter(p => 
+                p.name.toLowerCase().includes(filter.toLowerCase())
+            );
+            
+            if (filtered.length === 0) return '<div class="search-select-option" style="cursor: default; color: var(--text-light);">Nenhum plano encontrado</div>';
+            
+            const currentId = selectedId || document.getElementById('plan-id-input')?.value;
+
+            return filtered.map(p => {
+                const safeName = p.name.replace(/'/g, "\\'");
+                return `
+                <div class="search-select-option ${p.id == currentId ? 'selected' : ''}" 
+                     onclick="selectPlan(${p.id}, '${safeName}')">
+                    <span class="option-main">${p.name}</span>
+                    <span class="option-sub">${p.dataLimit} MB • R$ ${parseFloat(p.price).toFixed(2).replace('.', ',')}</span>
+                </div>
+            `}).join('');
+        };
+
+        window.filterPlanOptions = (value) => {
+            const list = document.getElementById('plan-options-list');
+            if (list) list.innerHTML = window.renderPlanOptions(value);
+        };
+
+        window.selectPlan = (id, name) => {
+            const input = document.getElementById('plan-id-input');
+            const label = document.getElementById('plan-selected-label');
+            const options = document.getElementById('plan-select-options');
+            
+            if (input) input.value = id;
+            if (label) label.textContent = name;
+            if (options) options.classList.remove('show');
+        };
+
         // Actions
         window.openModal = async (id = null) => {
             let conn = { 
                 clientId: null,
+                planId: null,
                 name: '', 
                 cpf: '', 
                 phone: '', 
@@ -462,12 +532,24 @@
                  }
             }
 
+            // Ensure plans are loaded
+            let plans = cachedPlans;
+            if (!plans || plans.length === 0) {
+                 try {
+                    plans = await Plans.getAll();
+                    cachedPlans = plans;
+                 } catch(err) {
+                    console.error('Erro ao buscar planos no fallback', err);
+                 }
+            }
+
             if (id) {
                 // Try cache first
                 const found = cachedConnections.find(c => c.id === id);
                 if (found) {
                      conn = found;
                      conn.clientId = found.ClientId; 
+                     conn.planId = found.PlanId;
                 } else {
                      // Fallback fetch
                      const connections = await fetchConnections();
@@ -475,6 +557,7 @@
                      if (foundRefetched) {
                         conn = foundRefetched;
                         conn.clientId = foundRefetched.ClientId;
+                        conn.planId = foundRefetched.PlanId;
                      }
                 }
                 
@@ -488,6 +571,9 @@
             const isEdit = !!id;
             const selectedClient = clients.find(c => c.id == conn.clientId);
             const initialLabel = selectedClient ? selectedClient.name : 'Selecione um cliente...';
+
+            const selectedPlan = plans.find(p => p.id == conn.planId);
+            const initialPlanLabel = selectedPlan ? selectedPlan.name : 'Selecione um plano...';
 
             const formHTML = `
                 <form id="connection-form">
@@ -508,12 +594,27 @@
                             </div>
                         </div>
                     </div>
-                    
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                        <div class="form-group">
-                            <label>Total de Conexões</label>
-                            <input type="number" name="total_connections" class="form-control" value="${conn.total_connections}" min="1" max="100" required>
+
+                    <div class="form-group">
+                        <label>Plano</label>
+                        <input type="hidden" name="planId" id="plan-id-input" value="${conn.planId || ''}" required>
+                        
+                        <div class="search-select-container" id="plan-select">
+                            <div class="search-select-trigger" onclick="togglePlanSelect()">
+                                <span id="plan-selected-label">${initialPlanLabel}</span>
+                                <i class="fa-solid fa-chevron-down" style="font-size: 0.75rem;"></i>
+                            </div>
+                            <div class="search-select-options" id="plan-select-options">
+                                <input type="text" class="search-select-input" placeholder="Buscar por nome..." onclick="event.stopPropagation()" oninput="filterPlanOptions(this.value)">
+                                <div id="plan-options-list">
+                                    ${window.renderPlanOptions('', conn.planId)}
+                                </div>
+                            </div>
                         </div>
+                        <small style="color: var(--text-light);">O pacote de dados será definido pelo plano selecionado.</small>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr; gap: 1rem;">
                          <div class="form-group">
                             <label>Status</label>
                             <select name="status" class="form-control">
@@ -521,11 +622,6 @@
                                 <option value="inactive" ${conn.status !== 'active' ? 'selected' : ''}>Inativo</option>
                             </select>
                         </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Pacote de Dados (MB)</label>
-                        <input type="number" name="data_limit" max="1000" class="form-control" value="${conn.data_limit}" min="1" placeholder="Ex: 1000" required>
                     </div>
                 </form>
             `;
@@ -537,16 +633,21 @@
                 onConfirm: async () => {
                     const form = document.getElementById('connection-form');
                     const clientId = form.querySelector('[name="clientId"]').value;
+                    const planId = form.querySelector('[name="planId"]').value;
                     
                     if (!clientId) {
                         alert('Por favor, selecione um cliente.');
                         throw new Error('Cliente obrigatório');
                     }
 
+                    if (!planId) {
+                         alert('Por favor, selecione um plano.');
+                         throw new Error('Plano obrigatório');
+                    }
+
                     const payload = {
                         clientId: clientId,
-                        total_connections: parseInt(form.querySelector('[name="total_connections"]').value),
-                        data_limit: parseInt(form.querySelector('[name="data_limit"]').value),
+                        planId: planId,
                         status: form.querySelector('[name="status"]').value
                     };
 
