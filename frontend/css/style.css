@@ -49,6 +49,43 @@ img {
     display: block;
 }
 
+/* Skeleton Loading */
+.skeleton {
+    background: #e2e8f0;
+    background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+    background-size: 200% 100%;
+    animation: skeleton-loading 1.5s infinite;
+    border-radius: 0.5rem;
+}
+
+@keyframes skeleton-loading {
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+.skeleton-text {
+    height: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.skeleton-circle {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+}
+
+.skeleton-card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 0.75rem;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-color);
+}
+
 /* Utilities */
 @media (min-width: 769px) {
     .d-md-none {
@@ -479,6 +516,11 @@ tr:last-child td {
 .badge-danger {
     background-color: #FEE2E2;
     color: #991B1B;
+}
+
+.badge-info {
+    background-color: #EFF6FF;
+    color: #1E40AF;
 }
 
 /* Login Page Styles */

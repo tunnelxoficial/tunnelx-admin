@@ -8,6 +8,7 @@ const clientRoutes = require('./routes/clientRoutes');
 const productRoutes = require('./routes/productRoutes');
 const stockRoutes = require('./routes/stockRoutes');
 const planRoutes = require('./routes/planRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
 require('dotenv').config();
 
 const app = express();
@@ -24,6 +25,7 @@ app.use('/clients', clientRoutes);
 app.use('/products', productRoutes);
 app.use('/stocks', stockRoutes);
 app.use('/plans', planRoutes);
+app.use('/dashboard', dashboardRoutes);
 
 
 // Base route

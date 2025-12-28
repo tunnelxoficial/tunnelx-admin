@@ -29,118 +29,168 @@
     <script>
         // Data Management
         async function loadDashboard() {
+            renderSkeleton();
             try {
-                const connections = await Connections.getAll();
-                renderDashboard(connections);
+                const stats = await Dashboard.getStats();
+                renderDashboard(stats);
             } catch (error) {
                 console.error('Error loading dashboard:', error);
+                const content = document.getElementById('page-content');
+                if (content) content.innerHTML = '<p class="text-center text-danger">Erro ao carregar dados.</p>';
             }
         }
 
-        function renderDashboard(connections) {
+        function renderSkeleton() {
             const content = document.getElementById('page-content');
             if (!content) return;
 
-            // Calculate Stats
-            const total = connections.length;
-            const active = connections.filter(c => c.status === 'active').length;
-            
-            const now = new Date();
-            const currentMonth = now.getMonth();
-            const currentYear = now.getFullYear();
-            
-            const newThisMonth = connections.filter(c => {
-                const d = new Date(c.createdAt);
-                return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-            }).length;
-
-            // Sort by Date (newest first)
-            const recentConnections = [...connections].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5);
+            const skeletonCard = `
+                <div class="skeleton-card">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 1rem;">
+                        <div class="skeleton skeleton-text" style="width: 100px;"></div>
+                        <div class="skeleton skeleton-circle"></div>
+                    </div>
+                    <div class="skeleton skeleton-text" style="width: 60px; height: 2rem;"></div>
+                    <div class="skeleton skeleton-text" style="width: 80px; margin-top: 0.5rem;"></div>
+                </div>
+            `;
 
             content.innerHTML = `
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
-                    <!-- Total Connections -->
-                    <div class="card" style="background: white; padding: 1.5rem; border-radius: 0.75rem; box-shadow: var(--shadow-sm); border: 1px solid var(--border-color);">
-                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
-                            <h3 style="font-size: 0.875rem; color: var(--text-light); font-weight: 500;">Total de Conexões</h3>
-                            <div style="width: 40px; height: 40px; background: #EFF6FF; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--primary-color);">
-                                <i class="fa-solid fa-network-wired"></i>
-                            </div>
-                        </div>
-                        <p style="font-size: 1.5rem; font-weight: 700; color: var(--text-color);">${total}</p>
-                        <span style="font-size: 0.75rem; color: var(--text-light); font-weight: 500;">
-                            Base completa
-                        </span>
-                    </div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+                    ${skeletonCard.repeat(4)}
+                </div>
 
-                    <!-- Active Users -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+                    <div class="skeleton-card" style="height: 300px;">
+                        <div class="skeleton skeleton-text" style="width: 150px; height: 1.5rem; margin-bottom: 1.5rem;"></div>
+                        <div class="skeleton skeleton-text" style="width: 100%; height: 2rem; margin-bottom: 1rem;"></div>
+                        <div class="skeleton skeleton-text" style="width: 100%; height: 2rem; margin-bottom: 1rem;"></div>
+                        <div class="skeleton skeleton-text" style="width: 100%; height: 2rem; margin-bottom: 1rem;"></div>
+                    </div>
+                    <div class="skeleton-card" style="height: 300px;">
+                         <div class="skeleton skeleton-text" style="width: 150px; height: 1.5rem; margin-bottom: 1.5rem;"></div>
+                         <div style="display: grid; gap: 1rem;">
+                            <div class="skeleton skeleton-text" style="width: 100%; height: 3rem;"></div>
+                            <div class="skeleton skeleton-text" style="width: 100%; height: 3rem;"></div>
+                            <div class="skeleton skeleton-text" style="width: 100%; height: 3rem;"></div>
+                         </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderDashboard(stats) {
+            const content = document.getElementById('page-content');
+            if (!content) return;
+
+            const formatCurrency = (value) => {
+                return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+            };
+
+            content.innerHTML = `
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+                    
+                    <!-- Clientes -->
                     <div class="card" style="background: white; padding: 1.5rem; border-radius: 0.75rem; box-shadow: var(--shadow-sm); border: 1px solid var(--border-color);">
                         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
-                            <h3 style="font-size: 0.875rem; color: var(--text-light); font-weight: 500;">Conexões Ativas</h3>
-                            <div style="width: 40px; height: 40px; background: #DCFCE7; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--secondary-color);">
+                            <h3 style="font-size: 0.875rem; color: var(--text-light); font-weight: 500;">Clientes Totais</h3>
+                            <div style="width: 40px; height: 40px; background: #EFF6FF; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--primary-color);">
                                 <i class="fa-solid fa-users"></i>
                             </div>
                         </div>
-                        <p style="font-size: 1.5rem; font-weight: 700; color: var(--text-color);">${active}</p>
-                        <span style="font-size: 0.75rem; color: var(--secondary-color); font-weight: 500;">
-                            ${((active/total || 0) * 100).toFixed(0)}% do total
-                        </span>
+                        <p style="font-size: 1.5rem; font-weight: 700; color: var(--text-color);">${stats.clients.total}</p>
                     </div>
-                    
-                    <!-- New This Month -->
+
+                    <!-- Conexões Ativas -->
                     <div class="card" style="background: white; padding: 1.5rem; border-radius: 0.75rem; box-shadow: var(--shadow-sm); border: 1px solid var(--border-color);">
                         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
-                            <h3 style="font-size: 0.875rem; color: var(--text-light); font-weight: 500;">Novas (Mês)</h3>
-                            <div style="width: 40px; height: 40px; background: #F3E8FF; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #9333EA;">
-                                <i class="fa-solid fa-calendar-plus"></i>
+                            <h3 style="font-size: 0.875rem; color: var(--text-light); font-weight: 500;">Conexões Ativas</h3>
+                            <div style="width: 40px; height: 40px; background: #DCFCE7; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--success-color);">
+                                <i class="fa-solid fa-network-wired"></i>
                             </div>
                         </div>
-                        <p style="font-size: 1.5rem; font-weight: 700; color: var(--text-color);">${newThisMonth}</p>
-                        <span style="font-size: 0.75rem; color: var(--text-light); font-weight: 500;">
-                            Neste mês
+                        <p style="font-size: 1.5rem; font-weight: 700; color: var(--text-color);">${stats.connections.active}</p>
+                        <span style="font-size: 0.75rem; color: var(--text-light);">
+                            de ${stats.connections.total} registradas
                         </span>
+                    </div>
+
+                    <!-- Valor em Estoque -->
+                    <div class="card" style="background: white; padding: 1.5rem; border-radius: 0.75rem; box-shadow: var(--shadow-sm); border: 1px solid var(--border-color);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                            <h3 style="font-size: 0.875rem; color: var(--text-light); font-weight: 500;">Valor em Estoque</h3>
+                            <div style="width: 40px; height: 40px; background: #FFF7ED; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #EA580C;">
+                                <i class="fa-solid fa-coins"></i>
+                            </div>
+                        </div>
+                        <p style="font-size: 1.5rem; font-weight: 700; color: var(--text-color);">${formatCurrency(stats.stock.totalValue)}</p>
+                    </div>
+
+                    <!-- Planos -->
+                    <div class="card" style="background: white; padding: 1.5rem; border-radius: 0.75rem; box-shadow: var(--shadow-sm); border: 1px solid var(--border-color);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                            <h3 style="font-size: 0.875rem; color: var(--text-light); font-weight: 500;">Planos Disponíveis</h3>
+                            <div style="width: 40px; height: 40px; background: #F3E8FF; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #9333EA;">
+                                <i class="fa-solid fa-clipboard-list"></i>
+                            </div>
+                        </div>
+                        <p style="font-size: 1.5rem; font-weight: 700; color: var(--text-color);">${stats.plans.total}</p>
                     </div>
                 </div>
 
-                <div style="margin-top: 2rem; background: white; border-radius: 0.75rem; border: 1px solid var(--border-color); padding: 1.5rem;">
-                    <h3 style="margin-bottom: 1rem; font-size: 1.125rem;">Atividade Recente</h3>
-                    ${recentConnections.length > 0 ? `
-                        <div style="overflow-x: auto;">
-                            <table style="width: 100%; border-collapse: collapse;">
-                                <thead>
-                                    <tr style="border-bottom: 1px solid var(--border-color);">
-                                        <th style="text-align: left; padding: 0.75rem 0; font-weight: 600; font-size: 0.875rem; color: var(--text-light);">Nome</th>
-                                        <th style="text-align: left; padding: 0.75rem 0; font-weight: 600; font-size: 0.875rem; color: var(--text-light);">Status</th>
-                                        <th style="text-align: right; padding: 0.75rem 0; font-weight: 600; font-size: 0.875rem; color: var(--text-light);">Data</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${recentConnections.map(c => `
-                                        <tr style="border-bottom: 1px solid var(--border-color);">
-                                            <td style="padding: 0.75rem 0; font-size: 0.875rem;">${c.name}</td>
-                                            <td style="padding: 0.75rem 0;">
-                                                <span style="
-                                                    padding: 0.25rem 0.5rem; 
-                                                    border-radius: 9999px; 
-                                                    font-size: 0.75rem; 
-                                                    font-weight: 500;
-                                                    background-color: ${c.status === 'active' ? '#DCFCE7' : '#FEE2E2'};
-                                                    color: ${c.status === 'active' ? '#166534' : '#991B1B'};
-                                                ">
-                                                    ${c.status === 'active' ? 'Ativo' : 'Inativo'}
-                                                </span>
-                                            </td>
-                                            <td style="text-align: right; padding: 0.75rem 0; font-size: 0.875rem; color: var(--text-light);">
-                                                ${new Date(c.createdAt).toLocaleDateString('pt-BR')}
-                                            </td>
-                                        </tr>
-                                    `).join('')}
-                                </tbody>
-                            </table>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+                    <!-- Alerta de Estoque -->
+                    <div style="background: white; border-radius: 0.75rem; border: 1px solid var(--border-color); padding: 1.5rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                            <h3 style="font-size: 1.125rem;">Estoque Baixo</h3>
+                            ${stats.stock.lowStockCount > 0 ? `<span class="badge badge-danger">${stats.stock.lowStockCount} itens</span>` : ''}
                         </div>
-                    ` : `
-                        <p style="color: var(--text-light);">Nenhuma atividade recente encontrada.</p>
-                    `}
+                        
+                        ${stats.stock.lowStockList.length > 0 ? `
+                            <div style="overflow-x: auto;">
+                                <table style="width: 100%; border-collapse: collapse;">
+                                    <thead>
+                                        <tr style="border-bottom: 1px solid var(--border-color);">
+                                            <th style="text-align: left; padding: 0.75rem 0; font-size: 0.875rem; color: var(--text-light);">Produto</th>
+                                            <th style="text-align: right; padding: 0.75rem 0; font-size: 0.875rem; color: var(--text-light);">Qtd.</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${stats.stock.lowStockList.map(item => `
+                                            <tr style="border-bottom: 1px solid var(--border-color);">
+                                                <td style="padding: 0.75rem 0; font-size: 0.875rem; font-weight: 500;">${item.product}</td>
+                                                <td style="text-align: right; padding: 0.75rem 0; font-size: 0.875rem; color: var(--danger-color); font-weight: 700;">${item.quantity}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div style="margin-top: 1rem; text-align: center;">
+                                <a href="estoque.html" style="font-size: 0.875rem; color: var(--primary-color); text-decoration: none; font-weight: 500;">Ver Estoque Completo &rarr;</a>
+                            </div>
+                        ` : `
+                            <p style="color: var(--text-light); text-align: center; padding: 2rem;">Nenhum item com estoque baixo.</p>
+                        `}
+                    </div>
+
+                    <!-- Ações Rápidas -->
+                    <div style="background: white; border-radius: 0.75rem; border: 1px solid var(--border-color); padding: 1.5rem;">
+                        <h3 style="margin-bottom: 1rem; font-size: 1.125rem;">Ações Rápidas</h3>
+                        <div style="display: grid; gap: 0.75rem;">
+                            <a href="clientes.html" class="btn btn-secondary" style="justify-content: start; text-align: left;">
+                                <i class="fa-solid fa-user-plus" style="margin-right: 0.5rem;"></i> Novo Cliente
+                            </a>
+                            <a href="conexoes.html" class="btn btn-secondary" style="justify-content: start; text-align: left;">
+                                <i class="fa-solid fa-plus-circle" style="margin-right: 0.5rem;"></i> Nova Conexão
+                            </a>
+                            <a href="estoque.html" class="btn btn-secondary" style="justify-content: start; text-align: left;">
+                                <i class="fa-solid fa-box-open" style="margin-right: 0.5rem;"></i> Gerenciar Estoque
+                            </a>
+                             <a href="planos.html" class="btn btn-secondary" style="justify-content: start; text-align: left;">
+                                <i class="fa-solid fa-clipboard-list" style="margin-right: 0.5rem;"></i> Gerenciar Planos
+                            </a>
+                        </div>
+                    </div>
                 </div>
             `;
         }

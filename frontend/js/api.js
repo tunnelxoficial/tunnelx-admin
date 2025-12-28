@@ -167,6 +167,13 @@ const Plans = {
     }
 };
 
+// Dashboard helper
+const Dashboard = {
+    async getStats() {
+        return await Api.get('/dashboard/stats');
+    }
+};
+
 // Auth specific helper
 const Auth = {
     async login(email, password) {
