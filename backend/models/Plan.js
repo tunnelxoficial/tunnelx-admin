@@ -26,6 +26,14 @@ const Plan = sequelize.define('Plan', {
     dataLimit: {
         type: DataTypes.INTEGER, // MB
         allowNull: false
+    },
+    total_connections: {
+        type: DataTypes.INTEGER,
+        defaultValue: 1
+    },
+    product_ids: {
+        type: DataTypes.TEXT, // JSON string: "[1, 2, 3]"
+        allowNull: true
     }
 }, {
     schema: 'tunnelx',

@@ -114,18 +114,33 @@
     <script src="js/api.js"></script>
     <script src="js/main.js"></script>
     <script>
-        // Data Management - Now using API
+        // Data Management
+        let cachedClients = [];
+        let cachedConnections = [];
+
         async function fetchConnections() {
             try {
-                return await Connections.getAll();
+                const conns = await Connections.getAll();
+                cachedConnections = conns;
+                return conns;
             } catch (error) {
                 console.error('Failed to fetch connections', error);
                 return [];
             }
         }
 
+        async function preloadClients() {
+            try {
+                cachedClients = await Clients.getAll();
+            } catch (err) {
+                console.error('Erro ao pré-carregar clientes', err);
+            }
+        }
+
         // Render Page
         document.addEventListener('DOMContentLoaded', () => {
+            preloadClients();
+
             setTimeout(() => {
                 const content = document.getElementById('page-content');
                 if (!content) return;
@@ -361,6 +376,67 @@
             }
         }
 
+        // UI Helpers for Search Select
+        window.toggleSelect = () => {
+            const options = document.getElementById('select-options');
+            if (!options) return;
+            
+            const isShowing = options.classList.contains('show');
+            if (isShowing) {
+                options.classList.remove('show');
+            } else {
+                options.classList.add('show');
+                const input = options.querySelector('.search-select-input');
+                if (input) setTimeout(() => input.focus(), 50);
+                
+                const closeHandler = (e) => {
+                    if (!e.target.closest('.search-select-container')) {
+                        options.classList.remove('show');
+                        document.removeEventListener('click', closeHandler);
+                    }
+                };
+                setTimeout(() => document.addEventListener('click', closeHandler), 0);
+            }
+        };
+
+        window.renderClientOptions = (filter = '', selectedId = null) => {
+            const clients = cachedClients || [];
+            const filtered = clients.filter(c => 
+                c.name.toLowerCase().includes(filter.toLowerCase()) || 
+                (c.cpf && c.cpf.includes(filter)) ||
+                c.email.toLowerCase().includes(filter.toLowerCase())
+            );
+            
+            if (filtered.length === 0) return '<div class="search-select-option" style="cursor: default; color: var(--text-light);">Nenhum cliente encontrado</div>';
+            
+            const currentId = selectedId || document.getElementById('client-id-input')?.value;
+
+            return filtered.map(c => {
+                const safeName = c.name.replace(/'/g, "\\'");
+                return `
+                <div class="search-select-option ${c.id == currentId ? 'selected' : ''}" 
+                     onclick="selectClient(${c.id}, '${safeName}')">
+                    <span class="option-main">${c.name}</span>
+                    <span class="option-sub">${c.cpf || 'Sem CPF'} • ${c.email}</span>
+                </div>
+            `}).join('');
+        };
+
+        window.filterOptions = (value) => {
+            const list = document.getElementById('options-list');
+            if (list) list.innerHTML = window.renderClientOptions(value);
+        };
+
+        window.selectClient = (id, name) => {
+            const input = document.getElementById('client-id-input');
+            const label = document.getElementById('selected-label');
+            const options = document.getElementById('select-options');
+            
+            if (input) input.value = id;
+            if (label) label.textContent = name;
+            if (options) options.classList.remove('show');
+        };
+
         // Actions
         window.openModal = async (id = null) => {
             let conn = { 
@@ -375,52 +451,42 @@
                 internet: true 
             };
             
-            // Load all clients for the selector
-            let clients = [];
-            try {
-                clients = await Clients.getAll();
-            } catch (err) {
-                console.error('Erro ao buscar clientes', err);
+            // Ensure clients are loaded
+            let clients = cachedClients;
+            if (!clients || clients.length === 0) {
+                 try {
+                    clients = await Clients.getAll();
+                    cachedClients = clients;
+                 } catch(err) {
+                    console.error('Erro ao buscar clientes no fallback', err);
+                 }
             }
 
             if (id) {
-                const connections = await fetchConnections();
-                const found = connections.find(c => c.id === id);
+                // Try cache first
+                const found = cachedConnections.find(c => c.id === id);
                 if (found) {
                      conn = found;
-                     conn.clientId = found.ClientId; // Assuming backend sends ClientId (case sensitive?) -> Sequelize sends ClientId or client_id depending on config.
-                     // The getAll returns `include: Client`, so we might need to check how it comes.
-                     // Usually sequelize returns `ClientId` if defined that way.
-                     // However, we just added the column `ClientId` manually in SQL.
-                     // Let's assume `ClientId` or we match by name/cpf if null.
-                     if (!conn.clientId && conn.cpf) {
-                         const match = clients.find(c => c.cpf === conn.cpf);
-                         if (match) conn.clientId = match.id;
+                     conn.clientId = found.ClientId; 
+                } else {
+                     // Fallback fetch
+                     const connections = await fetchConnections();
+                     const foundRefetched = connections.find(c => c.id === id);
+                     if (foundRefetched) {
+                        conn = foundRefetched;
+                        conn.clientId = foundRefetched.ClientId;
                      }
+                }
+                
+                // Try to match by CPF if ClientId is missing (legacy data)
+                if (!conn.clientId && conn.cpf && clients) {
+                     const match = clients.find(c => c.cpf === conn.cpf);
+                     if (match) conn.clientId = match.id;
                 }
             }
             
             const isEdit = !!id;
-            
-            // Helper to render options
-            const renderOptions = (filter = '') => {
-                const filtered = clients.filter(c => 
-                    c.name.toLowerCase().includes(filter.toLowerCase()) || 
-                    (c.cpf && c.cpf.includes(filter)) ||
-                    c.email.toLowerCase().includes(filter.toLowerCase())
-                );
-                
-                if (filtered.length === 0) return '<div class="search-select-option" style="cursor: default; color: var(--text-light);">Nenhum cliente encontrado</div>';
-                
-                return filtered.map(c => `
-                    <div class="search-select-option ${c.id === conn.clientId ? 'selected' : ''}" data-value="${c.id}" onclick="selectClient(${c.id}, '${c.name}')">
-                        <span class="option-main">${c.name}</span>
-                        <span class="option-sub">${c.cpf || 'Sem CPF'} • ${c.email}</span>
-                    </div>
-                `).join('');
-            };
-
-            const selectedClient = clients.find(c => c.id === conn.clientId);
+            const selectedClient = clients.find(c => c.id == conn.clientId);
             const initialLabel = selectedClient ? selectedClient.name : 'Selecione um cliente...';
 
             const formHTML = `
@@ -437,15 +503,12 @@
                             <div class="search-select-options" id="select-options">
                                 <input type="text" class="search-select-input" placeholder="Buscar por nome, CPF ou email..." onclick="event.stopPropagation()" oninput="filterOptions(this.value)">
                                 <div id="options-list">
-                                    ${renderOptions()}
+                                    ${window.renderClientOptions('', conn.clientId)}
                                 </div>
                             </div>
                         </div>
                     </div>
                     
-                    <!-- Hidden fields to maintain compatibility if needed, or just let backend handle it from Client -->
-                    <!-- Removing Name, CPF, Phone, Email inputs as requested -->
-
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                         <div class="form-group">
                             <label>Total de Conexões</label>
@@ -467,52 +530,21 @@
                 </form>
             `;
 
-            // Global helpers for this modal instance
-            window.toggleSelect = () => {
-                const options = document.getElementById('select-options');
-                options.classList.toggle('show');
-                if (options.classList.contains('show')) {
-                    options.querySelector('input').focus();
-                }
-            };
-            
-            window.filterOptions = (val) => {
-                document.getElementById('options-list').innerHTML = renderOptions(val);
-            };
-            
-            window.selectClient = (id, name) => {
-                document.getElementById('client-id-input').value = id;
-                document.getElementById('selected-label').innerText = name;
-                document.getElementById('select-options').classList.remove('show');
-            };
-
-            // Close select when clicking outside
-            const closeSelect = (e) => {
-                const container = document.getElementById('client-select');
-                if (container && !container.contains(e.target)) {
-                    document.getElementById('select-options').classList.remove('show');
-                }
-            };
-            document.addEventListener('click', closeSelect);
-
             Modal.show({
                 title: isEdit ? 'Editar Conexão' : 'Nova Conexão',
                 content: formHTML,
                 confirmText: 'Salvar',
                 onConfirm: async () => {
-                    document.removeEventListener('click', closeSelect); // Cleanup
-                    
                     const form = document.getElementById('connection-form');
                     const clientId = form.querySelector('[name="clientId"]').value;
                     
                     if (!clientId) {
                         alert('Por favor, selecione um cliente.');
-                        throw new Error('Cliente obrigatório'); // Prevent closing
+                        throw new Error('Cliente obrigatório');
                     }
 
                     const payload = {
                         clientId: clientId,
-                        // Name, cpf, etc will be pulled by backend
                         total_connections: parseInt(form.querySelector('[name="total_connections"]').value),
                         data_limit: parseInt(form.querySelector('[name="data_limit"]').value),
                         status: form.querySelector('[name="status"]').value
@@ -527,7 +559,7 @@
                         refreshTable();
                     } catch (error) {
                         alert('Erro ao salvar: ' + error.message);
-                        throw error; // Re-throw to prevent modal closing if Modal supports it (it doesn't fully support it yet in my impl, but alert helps)
+                        throw error;
                     }
                 }
             });

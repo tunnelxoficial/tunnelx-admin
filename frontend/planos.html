@@ -50,9 +50,10 @@
                                     <tr>
                                         <th>Nome</th>
                                         <th>Ciclo</th>
-                                        <th>Pacote de Dados</th>
+                                        <th>Conexões</th>
+                                        <th>Dados</th>
                                         <th>Valor</th>
-                                        <th>Descrição</th>
+                                        <th>Produtos</th>
                                         <th style="text-align: right;">Ações</th>
                                     </tr>
                                 </thead>
@@ -80,17 +81,34 @@
                 const plans = await Plans.getAll();
                 
                 if (plans.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-light); padding: 2rem;">Nenhum plano cadastrado.</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-light); padding: 2rem;">Nenhum plano cadastrado.</td></tr>`;
                     return;
                 }
 
-                tbody.innerHTML = plans.map(item => `
+                tbody.innerHTML = plans.map(item => {
+                    let productCount = 0;
+                    try {
+                         const pIds = JSON.parse(item.product_ids || '[]');
+                         productCount = Array.isArray(pIds) ? pIds.length : 0;
+                    } catch (e) {
+                         productCount = 0;
+                    }
+
+                    return `
                     <tr>
-                        <td style="font-weight: 500;">${item.name}</td>
+                        <td style="font-weight: 500;">
+                            ${item.name}
+                            <div style="font-size: 0.75rem; color: var(--text-light); max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${item.description || ''}</div>
+                        </td>
                         <td><span class="badge badge-info">${item.cycle}</span></td>
+                        <td>${item.total_connections || 1}</td>
                         <td>${item.dataLimit} MB</td>
                         <td>R$ ${parseFloat(item.price).toFixed(2).replace('.', ',')}</td>
-                        <td style="color: var(--text-light); font-size: 0.9em; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.description || '-'}</td>
+                        <td>
+                            <span class="badge badge-secondary" title="Produtos vinculados">
+                                <i class="fa-solid fa-box"></i> ${productCount}
+                            </span>
+                        </td>
                         <td style="text-align: right;">
                             <button class="btn btn-sm btn-secondary" onclick="openModal(${item.id})" title="Editar">
                                 <i class="fa-solid fa-edit"></i>
@@ -100,10 +118,10 @@
                             </button>
                         </td>
                     </tr>
-                `).join('');
+                `}).join('');
             } catch (error) {
                 console.error(error);
-                tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--danger-color); padding: 2rem;">Erro ao carregar dados.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--danger-color); padding: 2rem;">Erro ao carregar dados.</td></tr>`;
             }
         }
 
@@ -114,31 +132,86 @@
                 description: '',
                 cycle: 'Mensal',
                 price: '',
-                dataLimit: ''
+                dataLimit: '',
+                total_connections: 1,
+                product_ids: []
             };
+            
+            // Load products for the list
+            let products = [];
+            try {
+                products = await Products.getAll();
+            } catch (err) {
+                console.error('Erro ao carregar produtos', err);
+            }
 
             if (id) {
-                // For editing, we need to fetch the plan details or find it in the list
-                // Since we don't have getById exposed in Api.js specifically but can find it from list or add getById
-                // Let's assume we can fetch all and find, or just add getById. 
-                // For simplicity, let's fetch all and find, or assume the user wants to edit what's in the table.
-                // Better approach: fetch all and find, or add getById to controller/api.
-                // Let's just use the list for now to save a call if possible, but actually we need the data.
                 try {
                     const plans = await Plans.getAll();
                     const found = plans.find(p => p.id === id);
-                    if (found) data = found;
+                    if (found) {
+                        data = found;
+                        // Ensure product_ids is parsed
+                        if (typeof data.product_ids === 'string') {
+                            try {
+                                data.product_ids = JSON.parse(data.product_ids);
+                            } catch(e) {
+                                data.product_ids = [];
+                            }
+                        } else if (!data.product_ids) {
+                            data.product_ids = [];
+                        }
+                    }
                 } catch (e) {
                     alert('Erro ao carregar dados para edição');
                     return;
                 }
             }
             
+            const renderProductList = () => {
+                if (products.length === 0) return '<div style="color: var(--text-light); font-size: 0.875rem; padding: 1rem; text-align: center;">Nenhum produto cadastrado</div>';
+                
+                return products.map(prod => {
+                    const checkedAttr = data.product_ids.some(pid => pid == prod.id) ? 'checked' : '';
+                    const selectedClass = checkedAttr ? 'selected' : '';
+                    
+                    return `
+                    <div class="multi-select-item ${selectedClass}" onclick="const c=this.querySelector('input');if(event.target!==c)c.click()">
+                        <div>
+                            <input type="checkbox" name="product_ids" value="${prod.id}" ${checkedAttr} 
+                               onchange="this.closest('.multi-select-item').classList.toggle('selected', this.checked)">
+                        </div>
+                        <div class="multi-select-content">
+                            <div class="product-info">
+                                <span class="product-type">${prod.descricao || ''}</span>
+                                <span class="product-desc">${prod.tipo || ''}</span>
+                            </div>
+                            <span class="product-price">R$ ${parseFloat(prod.valor).toFixed(2).replace('.', ',')}</span>
+                        </div>
+                    </div>
+                `}).join('');
+            };
+
             const formHTML = `
                 <form id="plan-form">
                     <div class="form-group">
                         <label>Nome do Plano</label>
                         <input type="text" name="name" class="form-control" value="${data.name}" required>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                             <div class="form-group">
+                                <label>Valor (R$)</label>
+                                <input type="number" name="price" class="form-control" value="${data.price}" step="0.01" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label>Pacote de Dados (MB)</label>
+                                <input type="number" name="dataLimit" class="form-control" value="${data.dataLimit}" placeholder="Ex: 10" required>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="row">
@@ -153,19 +226,22 @@
                                 </select>
                             </div>
                         </div>
-                        <div class="col-md-6">
-                             <div class="form-group">
-                                <label>Valor (R$)</label>
-                                <input type="number" name="price" class="form-control" value="${data.price}" step="0.01" required>
+                         <div class="col-md-6">
+                            <div class="form-group">
+                                <label>Total de Conexões</label>
+                                <input type="number" name="total_connections" class="form-control" value="${data.total_connections || 1}" min="1" required>
                             </div>
                         </div>
                     </div>
-
-                    <div class="form-group">
-                        <label>Pacote de Dados</label>
-                        <input type="number" name="dataLimit" class="form-control" value="${data.dataLimit}" placeholder="Ex: 10" required>
-                    </div>
                     
+                    <div class="form-group">
+                        <label>Produtos Vinculados</label>
+                        <div class="multi-select-container">
+                            ${renderProductList()}
+                        </div>
+                        <small style="color: var(--text-light);">Selecione os produtos incluídos neste plano.</small>
+                    </div>
+
                     <div class="form-group">
                         <label>Descrição</label>
                         <textarea name="description" class="form-control" rows="3">${data.description || ''}</textarea>
@@ -179,11 +255,18 @@
                 confirmText: 'Salvar',
                 onConfirm: async () => {
                     const form = document.getElementById('plan-form');
+                    
+                    // Collect selected products
+                    const selectedProducts = Array.from(form.querySelectorAll('input[name="product_ids"]:checked'))
+                        .map(cb => parseInt(cb.value));
+
                     const payload = {
                         name: form.querySelector('[name="name"]').value,
                         cycle: form.querySelector('[name="cycle"]').value,
                         price: form.querySelector('[name="price"]').value,
                         dataLimit: form.querySelector('[name="dataLimit"]').value,
+                        total_connections: form.querySelector('[name="total_connections"]').value,
+                        product_ids: selectedProducts,
                         description: form.querySelector('[name="description"]').value
                     };
 

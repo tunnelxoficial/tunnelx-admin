@@ -17,7 +17,7 @@ const planController = {
     // Create a new plan
     create: async (req, res) => {
         try {
-            const { name, description, cycle, price, dataLimit } = req.body;
+            const { name, description, cycle, price, dataLimit, total_connections, product_ids } = req.body;
 
             if (!name || !cycle || !price || !dataLimit) {
                 return res.status(400).json({ error: 'Nome, ciclo, valor e pacote de dados são obrigatórios' });
@@ -28,7 +28,9 @@ const planController = {
                 description,
                 cycle,
                 price,
-                dataLimit
+                dataLimit,
+                total_connections: total_connections || 1,
+                product_ids: JSON.stringify(product_ids || [])
             });
 
             res.status(201).json(newPlan);
@@ -42,7 +44,7 @@ const planController = {
     update: async (req, res) => {
         try {
             const { id } = req.params;
-            const { name, description, cycle, price, dataLimit } = req.body;
+            const { name, description, cycle, price, dataLimit, total_connections, product_ids } = req.body;
 
             const plan = await Plan.findByPk(id);
 
@@ -55,7 +57,9 @@ const planController = {
                 description,
                 cycle,
                 price,
-                dataLimit
+                dataLimit,
+                total_connections,
+                product_ids: JSON.stringify(product_ids || [])
             });
 
             res.json(plan);
