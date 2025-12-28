@@ -11,6 +11,10 @@ const Client = sequelize.define('Client', {
         type: DataTypes.STRING,
         allowNull: false
     },
+    cpf: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
     email: {
         type: DataTypes.STRING,
         allowNull: false,

@@ -53,6 +53,13 @@ const Connection = sequelize.define('Connection', {
     status_queue: {
         type: DataTypes.ENUM('WAIT', 'CREATED'),
         defaultValue: 'WAIT'
+    },
+    ClientId: {
+        type: DataTypes.INTEGER,
+        references: {
+            model: 'Clients',
+            key: 'id'
+        }
     }
 }, {
     timestamps: true

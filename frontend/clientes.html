@@ -59,6 +59,7 @@
                                 <thead>
                                     <tr>
                                         <th>Nome</th>
+                                        <th>CPF</th>
                                         <th>Email</th>
                                         <th>WhatsApp</th>
                                         <th>Cidade/UF</th>
@@ -99,6 +100,7 @@
                         <td>
                             <div style="font-weight: 500;">${client.name}</div>
                         </td>
+                        <td>${client.cpf || '-'}</td>
                         <td>${client.email}</td>
                         <td>${client.whatsapp}</td>
                         <td>${client.cidade || '-'} / ${client.uf || '-'}</td>
@@ -122,6 +124,7 @@
         window.openModal = async (id = null) => {
             let client = { 
                 name: '', 
+                cpf: '',
                 email: '', 
                 whatsapp: '', 
                 cep: '',
@@ -142,9 +145,15 @@
 
             const formHTML = `
                 <form id="client-form">
-                    <div class="form-group">
-                        <label>Nome Completo</label>
-                        <input type="text" name="name" class="form-control" value="${client.name}" required>
+                    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1rem;">
+                        <div class="form-group">
+                            <label>Nome Completo</label>
+                            <input type="text" name="name" class="form-control" value="${client.name}" required>
+                        </div>
+                        <div class="form-group">
+                            <label>CPF</label>
+                            <input type="text" name="cpf" class="form-control" value="${client.cpf || ''}" placeholder="000.000.000-00" oninput="this.value = Masks.cpf(this.value)">
+                        </div>
                     </div>
                     
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
@@ -203,6 +212,7 @@
                     
                     const payload = {
                         name: form.querySelector('[name="name"]').value,
+                        cpf: form.querySelector('[name="cpf"]').value,
                         email: form.querySelector('[name="email"]').value,
                         whatsapp: form.querySelector('[name="whatsapp"]').value,
                         cep: form.querySelector('[name="cep"]').value,

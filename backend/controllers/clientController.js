@@ -12,10 +12,11 @@ exports.getAll = async (req, res) => {
 
 exports.create = async (req, res) => {
     try {
-        const { name, email, whatsapp, cep, uf, cidade, bairro, logradouro, complemento } = req.body;
+        const { name, cpf, email, whatsapp, cep, uf, cidade, bairro, logradouro, complemento } = req.body;
         
         const newClient = await Client.create({
             name,
+            cpf,
             email,
             whatsapp,
             cep,
@@ -36,7 +37,7 @@ exports.create = async (req, res) => {
 exports.update = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, email, whatsapp, cep, uf, cidade, bairro, logradouro, complemento } = req.body;
+        const { name, cpf, email, whatsapp, cep, uf, cidade, bairro, logradouro, complemento } = req.body;
 
         const client = await Client.findByPk(id);
         if (!client) {
@@ -45,6 +46,7 @@ exports.update = async (req, res) => {
 
         await client.update({
             name,
+            cpf,
             email,
             whatsapp,
             cep,
