@@ -1,3 +1,4 @@
+const BASE_URL = 'https://others-tunnelx-backed.pvuzyy.easypanel.host';
 
 class Api {
     static getAuthToken() {
