@@ -1,4 +1,3 @@
-const BASE_URL = 'https://others-tunnelx-backed.pvuzyy.easypanel.host';
 
 class Api {
     static getAuthToken() {
@@ -80,6 +79,90 @@ const Connections = {
         // or just use request here.
         // Assuming Api class needs PATCH method. Let's add it quickly or use request.
         return await Api.request(`/connections/${id}/toggle-internet`, 'PATCH');
+    }
+};
+
+// Clients helper
+const Clients = {
+    async getAll() {
+        return await Api.get('/clients');
+    },
+
+    async create(data) {
+        return await Api.post('/clients', data);
+    },
+
+    async update(id, data) {
+        return await Api.put(`/clients/${id}`, data);
+    },
+
+    async delete(id) {
+        return await Api.delete(`/clients/${id}`);
+    }
+};
+
+// Products helper
+const Products = {
+    async getAll() {
+        return await Api.get('/products');
+    },
+
+    async create(data) {
+        return await Api.post('/products', data);
+    },
+
+    async update(id, data) {
+        return await Api.put(`/products/${id}`, data);
+    },
+
+    async delete(id) {
+        return await Api.delete(`/products/${id}`);
+    }
+};
+
+// Stocks helper
+const Stocks = {
+    async getAll() {
+        return await Api.get('/stocks');
+    },
+
+    async create(data) {
+        return await Api.post('/stocks', data);
+    },
+
+    async update(id, data) {
+        return await Api.put(`/stocks/${id}`, data);
+    },
+
+    async registerMovement(id, type, quantity, reason) {
+        return await Api.post(`/stocks/${id}/movement`, { type, quantity, reason });
+    },
+
+    async getHistory(id) {
+        return await Api.get(`/stocks/${id}/history`);
+    },
+
+    async delete(id) {
+        return await Api.delete(`/stocks/${id}`);
+    }
+};
+
+// Plans helper
+const Plans = {
+    async getAll() {
+        return await Api.get('/plans');
+    },
+
+    async create(data) {
+        return await Api.post('/plans', data);
+    },
+
+    async update(id, data) {
+        return await Api.put(`/plans/${id}`, data);
+    },
+
+    async delete(id) {
+        return await Api.delete(`/plans/${id}`);
     }
 };
 
