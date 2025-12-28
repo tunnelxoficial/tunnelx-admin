@@ -20,6 +20,26 @@
     
     <!-- Favicon -->
     <link rel="shortcut icon" href="img/favicon.jpg" type="image/x-icon">
+    <style>
+        .status-file-loader {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            color: var(--text-light);
+        }
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--border-color);
+            border-top-color: var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
 </head>
 <body>
     <div id="app"></div>
@@ -64,6 +84,7 @@
                                         <th>Pacote</th>
                                         <th>Conexões</th>
                                         <th>Status</th>
+                                        <th>Status File</th>
                                         <th>Internet</th>
                                         <th style="text-align: right;">Ações</th>
                                     </tr>
@@ -78,10 +99,121 @@
 
                 refreshTable();
                 
+                // Start polling for status file updates
+                setInterval(updateStatusFiles, 30000);
+
                 document.getElementById('btn-add').addEventListener('click', () => openModal());
 
             }, 100);
         });
+
+        // Helper to render Status File column
+        function getStatusFileContent(conn) {
+            if (conn.status_queue === 'WAIT') {
+                return `
+                    <div class="status-file-loader">
+                        <div class="spinner"></div>
+                        <span>Criando...</span>
+                    </div>
+                `;
+            } else if (conn.status_queue === 'CREATED') {
+                return `
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn btn-sm btn-outline-primary" onclick="showQRCode(${conn.id})" title="Ver QR Code">
+                            <i class="fa-solid fa-qrcode"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-success" onclick="downloadConfig(${conn.id})" title="Baixar Config">
+                            <i class="fa-solid fa-download"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="copyConfig(${conn.id})" title="Copiar Config">
+                            <i class="fa-regular fa-copy"></i>
+                        </button>
+                    </div>
+                `;
+            }
+            return '-';
+        }
+
+        // Action Functions for Status File
+        window.showQRCode = async (id) => {
+            const connections = await fetchConnections();
+            const conn = connections.find(c => c.id === id);
+            if (!conn || !conn.qrcode) {
+                alert('QR Code não disponível.');
+                return;
+            }
+
+            // If qrcode is buffer/blob, convert to base64
+            // Assuming backend sends a buffer array or base64 string
+            // If it's a Buffer array from Sequelize: { type: 'Buffer', data: [...] }
+            let src = '';
+            if (typeof conn.qrcode === 'string') {
+                 src = conn.qrcode.startsWith('data:') ? conn.qrcode : `data:image/png;base64,${conn.qrcode}`;
+            } else if (conn.qrcode && conn.qrcode.type === 'Buffer') {
+                 // Convert buffer to base64
+                 const binary = String.fromCharCode.apply(null, conn.qrcode.data);
+                 const base64 = btoa(binary);
+                 src = `data:image/png;base64,${base64}`;
+            } else {
+                 // Try to handle as raw base64 if it's just bytes
+                 // Or maybe it is already a URL
+                 src = conn.qrcode;
+            }
+
+            Modal.show({
+                title: 'QR Code da Conexão',
+                content: `
+                    <div style="display: flex; justify-content: center; padding: 1rem;">
+                        <img src="${src}" alt="QR Code" style="max-width: 100%; height: auto; border: 1px solid var(--border-color); border-radius: 0.5rem;">
+                    </div>
+                `,
+                confirmText: 'Fechar',
+                type: 'primary',
+                onConfirm: () => {} // Just close
+            });
+        };
+
+        window.downloadConfig = async (id) => {
+            const connections = await fetchConnections();
+            const conn = connections.find(c => c.id === id);
+            if (!conn || !conn.config) {
+                alert('Configuração não disponível.');
+                return;
+            }
+
+            const element = document.createElement('a');
+            const file = new Blob([conn.config], {type: 'text/plain'});
+            element.href = URL.createObjectURL(file);
+            element.download = `config-${conn.name.replace(/\s+/g, '-').toLowerCase()}.conf`; // Assuming OpenVPN or similar
+            document.body.appendChild(element);
+            element.click();
+            document.body.removeChild(element);
+        };
+
+        window.copyConfig = async (id) => {
+            const connections = await fetchConnections();
+            const conn = connections.find(c => c.id === id);
+            if (!conn || !conn.config) {
+                alert('Configuração não disponível.');
+                return;
+            }
+
+            try {
+                await navigator.clipboard.writeText(conn.config);
+                // Show a small toast or alert
+                const originalText = document.activeElement.innerHTML;
+                const btn = document.activeElement;
+                
+                // Visual feedback on the button
+                btn.innerHTML = '<i class="fa-solid fa-check"></i>';
+                setTimeout(() => {
+                    btn.innerHTML = '<i class="fa-regular fa-copy"></i>';
+                }, 2000);
+                
+            } catch (err) {
+                alert('Erro ao copiar: ' + err);
+            }
+        };
 
         // Table Logic
         async function refreshTable() {
@@ -115,6 +247,9 @@
                                 ${conn.status === 'active' ? 'Ativo' : 'Inativo'}
                             </span>
                         </td>
+                        <td class="status-file-cell" data-id="${conn.id}">
+                            ${getStatusFileContent(conn)}
+                        </td>
                         <td>
                             <i class="fa-solid ${conn.internet ? 'fa-globe' : 'fa-ban'}" 
                                style="color: ${conn.internet ? 'var(--secondary-color)' : 'var(--danger-color)'}; margin-left: 0.5rem;"
@@ -135,6 +270,27 @@
                 `).join('');
             } catch (error) {
                 tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--danger-color); padding: 2rem;">Erro ao carregar dados.</td></tr>`;
+            }
+        }
+
+        // Polling function for Status File
+        async function updateStatusFiles() {
+            try {
+                // Fetch latest data without full table refresh
+                const connections = await fetchConnections();
+                
+                connections.forEach(conn => {
+                    const cell = document.querySelector(`.status-file-cell[data-id="${conn.id}"]`);
+                    if (cell) {
+                        const newContent = getStatusFileContent(conn);
+                        // Only update DOM if content changed (avoids unnecessary repaints/flicker)
+                        if (cell.innerHTML.replace(/\s/g, '') !== newContent.replace(/\s/g, '')) {
+                             cell.innerHTML = newContent;
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Polling error:', error);
             }
         }
 
