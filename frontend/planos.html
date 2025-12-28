@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planos - TunnelX Admin</title>
+
+    <meta name="theme-color" content="#2563EB">
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+    
+    <!-- Favicon -->
+    <link rel="shortcut icon" href="img/favicon.jpg" type="image/x-icon">
+</head>
+<body>
+    <div id="app"></div>
+
+    <script src="js/api.js"></script>
+    <script src="js/main.js"></script>
+    <script>
+        // Render Page
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                const content = document.getElementById('page-content');
+                if (!content) return;
+
+                content.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                        <div class="search-box" style="display: flex; gap: 0.5rem;">
+                            <!-- Search could be added here -->
+                        </div>
+                        <button class="btn btn-primary" id="btn-add">
+                            <i class="fa-solid fa-plus"></i> Novo Plano
+                        </button>
+                    </div>
+
+                    <div class="table-container">
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Nome</th>
+                                        <th>Ciclo</th>
+                                        <th>Pacote de Dados</th>
+                                        <th>Valor</th>
+                                        <th>Descrição</th>
+                                        <th style="text-align: right;">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="plans-table-body">
+                                    <tr><td colspan="6" style="text-align: center; padding: 2rem;">Carregando...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+
+                refreshTable();
+                
+                document.getElementById('btn-add').addEventListener('click', () => openModal());
+
+            }, 100);
+        });
+
+        // Table Logic
+        async function refreshTable() {
+            const tbody = document.getElementById('plans-table-body');
+            if (!tbody) return;
+
+            try {
+                const plans = await Plans.getAll();
+                
+                if (plans.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-light); padding: 2rem;">Nenhum plano cadastrado.</td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = plans.map(item => `
+                    <tr>
+                        <td style="font-weight: 500;">${item.name}</td>
+                        <td><span class="badge badge-info">${item.cycle}</span></td>
+                        <td>${item.dataLimit} MB</td>
+                        <td>R$ ${parseFloat(item.price).toFixed(2).replace('.', ',')}</td>
+                        <td style="color: var(--text-light); font-size: 0.9em; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.description || '-'}</td>
+                        <td style="text-align: right;">
+                            <button class="btn btn-sm btn-secondary" onclick="openModal(${item.id})" title="Editar">
+                                <i class="fa-solid fa-edit"></i>
+                            </button>
+                            <button class="btn btn-sm btn-danger" onclick="deletePlan(${item.id})" title="Excluir">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                console.error(error);
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--danger-color); padding: 2rem;">Erro ao carregar dados.</td></tr>`;
+            }
+        }
+
+        // Actions
+        window.openModal = async (id = null) => {
+            let data = {
+                name: '',
+                description: '',
+                cycle: 'Mensal',
+                price: '',
+                dataLimit: ''
+            };
+
+            if (id) {
+                // For editing, we need to fetch the plan details or find it in the list
+                // Since we don't have getById exposed in Api.js specifically but can find it from list or add getById
+                // Let's assume we can fetch all and find, or just add getById. 
+                // For simplicity, let's fetch all and find, or assume the user wants to edit what's in the table.
+                // Better approach: fetch all and find, or add getById to controller/api.
+                // Let's just use the list for now to save a call if possible, but actually we need the data.
+                try {
+                    const plans = await Plans.getAll();
+                    const found = plans.find(p => p.id === id);
+                    if (found) data = found;
+                } catch (e) {
+                    alert('Erro ao carregar dados para edição');
+                    return;
+                }
+            }
+            
+            const formHTML = `
+                <form id="plan-form">
+                    <div class="form-group">
+                        <label>Nome do Plano</label>
+                        <input type="text" name="name" class="form-control" value="${data.name}" required>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label>Ciclo</label>
+                                <select name="cycle" class="form-control" required>
+                                    <option value="Mensal" ${data.cycle === 'Mensal' ? 'selected' : ''}>Mensal</option>
+                                    <option value="Trimestral" ${data.cycle === 'Trimestral' ? 'selected' : ''}>Trimestral</option>
+                                    <option value="Semestral" ${data.cycle === 'Semestral' ? 'selected' : ''}>Semestral</option>
+                                    <option value="Anual" ${data.cycle === 'Anual' ? 'selected' : ''}>Anual</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                             <div class="form-group">
+                                <label>Valor (R$)</label>
+                                <input type="number" name="price" class="form-control" value="${data.price}" step="0.01" required>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Pacote de Dados</label>
+                        <input type="number" name="dataLimit" class="form-control" value="${data.dataLimit}" placeholder="Ex: 10" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Descrição</label>
+                        <textarea name="description" class="form-control" rows="3">${data.description || ''}</textarea>
+                    </div>
+                </form>
+            `;
+
+            Modal.show({
+                title: id ? 'Editar Plano' : 'Novo Plano',
+                content: formHTML,
+                confirmText: 'Salvar',
+                onConfirm: async () => {
+                    const form = document.getElementById('plan-form');
+                    const payload = {
+                        name: form.querySelector('[name="name"]').value,
+                        cycle: form.querySelector('[name="cycle"]').value,
+                        price: form.querySelector('[name="price"]').value,
+                        dataLimit: form.querySelector('[name="dataLimit"]').value,
+                        description: form.querySelector('[name="description"]').value
+                    };
+
+                    try {
+                        if (id) {
+                            await Plans.update(id, payload);
+                        } else {
+                            await Plans.create(payload);
+                        }
+                        refreshTable();
+                    } catch (error) {
+                        alert('Erro ao salvar: ' + error.message);
+                    }
+                }
+            });
+        };
+
+        window.deletePlan = (id) => {
+            Modal.show({
+                title: 'Excluir Plano',
+                content: '<p>Tem certeza que deseja excluir este plano?</p>',
+                confirmText: 'Excluir',
+                type: 'danger',
+                onConfirm: async () => {
+                    try {
+                        await Plans.delete(id);
+                        refreshTable();
+                    } catch (error) {
+                        alert('Erro ao excluir: ' + error.message);
+                    }
+                }
+            });
+        };
+    </script>
+</body>
+</html>

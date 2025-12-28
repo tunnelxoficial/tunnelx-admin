@@ -1,9 +1,12 @@
-
 class AppLayout {
     constructor() {
         this.sidebarItems = [
             { label: 'Início', icon: 'fa-solid fa-house', link: 'index.html' },
-            { label: 'Conexões', icon: 'fa-solid fa-network-wired', link: 'conexoes.html' }
+            { label: 'Conexões', icon: 'fa-solid fa-network-wired', link: 'conexoes.html' },
+            { label: 'Clientes', icon: 'fa-solid fa-users', link: 'clientes.html' },
+            { label: 'Produtos', icon: 'fa-solid fa-box', link: 'produtos.html' },
+            { label: 'Estoque', icon: 'fa-solid fa-boxes-stacked', link: 'estoque.html' },
+            { label: 'Planos', icon: 'fa-solid fa-clipboard-list', link: 'planos.html' }
         ];
         this.init();
     }
@@ -105,12 +108,12 @@ class AppLayout {
         return `
             <nav class="bottom-nav d-md-none">
                 ${this.sidebarItems.map(item => `
-                    <a href="${item.link}" class="${this.isActive(item.link) ? 'active' : ''}">
+                    <a href="${item.link}" class="bottom-nav-item ${this.isActive(item.link) ? 'active' : ''}">
                         <i class="${item.icon}"></i>
                         <span>${item.label}</span>
                     </a>
                 `).join('')}
-                <a href="#" id="mobile-logout-btn">
+                <a href="#" id="mobile-logout-btn" class="bottom-nav-item">
                     <i class="fa-solid fa-right-from-bracket"></i>
                     <span>Sair</span>
                 </a>
@@ -122,6 +125,10 @@ class AppLayout {
         const path = window.location.pathname;
         if (path.includes('index.html')) return 'Início';
         if (path.includes('conexoes.html')) return 'Gerenciar Conexões';
+        if (path.includes('clientes.html')) return 'Gerenciar Clientes';
+        if (path.includes('produtos.html')) return 'Gerenciar Produtos';
+        if (path.includes('estoque.html')) return 'Controle de Estoque';
+        if (path.includes('planos.html')) return 'Gerenciar Planos';
         return 'Dashboard';
     }
 
@@ -230,7 +237,7 @@ class Modal {
 }
 
 // Global Masks Helper
-const Masks = {
+window.Masks = {
     cpf(value) {
         if (!value) return "";
         return value
@@ -254,9 +261,14 @@ const Masks = {
             r = r.replace(/^(\d*)/, "($1");
         }
         return r;
+    },
+    cep(value) {
+        return value
+            .replace(/\D/g, '')
+            .replace(/^(\d{5})(\d)/, '$1-$2')
+            .slice(0, 9);
     }
 };
-window.Masks = Masks;
 
 // Initialize App
 document.addEventListener('DOMContentLoaded', () => {

@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Produtos - TunnelX Admin</title>
+
+    <meta name="theme-color" content="#2563EB">
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+    
+    <!-- Favicon -->
+    <link rel="shortcut icon" href="img/favicon.jpg" type="image/x-icon">
+</head>
+<body>
+    <div id="app"></div>
+
+    <script src="js/api.js"></script>
+    <script src="js/main.js"></script>
+    <script>
+        // Data Management
+        async function fetchProducts() {
+            try {
+                return await Products.getAll();
+            } catch (error) {
+                console.error('Failed to fetch products', error);
+                return [];
+            }
+        }
+
+        // Render Page
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                const content = document.getElementById('page-content');
+                if (!content) return;
+
+                content.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                        <div class="search-box" style="display: flex; gap: 0.5rem;">
+                            <!-- Search could be added here -->
+                        </div>
+                        <button class="btn btn-primary" id="btn-add">
+                            <i class="fa-solid fa-plus"></i> Novo Produto
+                        </button>
+                    </div>
+
+                    <div class="table-container">
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Tipo</th>
+                                        <th>Descrição</th>
+                                        <th>Valor</th>
+                                        <th style="text-align: right;">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="products-table-body">
+                                    <tr><td colspan="4" style="text-align: center; padding: 2rem;">Carregando...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+
+                refreshTable();
+                
+                document.getElementById('btn-add').addEventListener('click', () => openModal());
+
+            }, 100);
+        });
+
+        // Table Logic
+        async function refreshTable() {
+            const tbody = document.getElementById('products-table-body');
+            if (!tbody) return;
+
+            try {
+                const products = await fetchProducts();
+                
+                if (products.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-light); padding: 2rem;">Nenhum produto encontrado.</td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = products.map(product => `
+                    <tr>
+                        <td>
+                            <span class="badge badge-success">${product.tipo}</span>
+                        </td>
+                        <td>${product.descricao}</td>
+                        <td>R$ ${parseFloat(product.valor).toFixed(2).replace('.', ',')}</td>
+                        <td style="text-align: right;">
+                            <button class="btn btn-sm btn-secondary" onclick="openModal(${product.id})" title="Editar">
+                                <i class="fa-solid fa-pen"></i>
+                            </button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteProduct(${product.id})" title="Excluir">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--danger-color); padding: 2rem;">Erro ao carregar dados.</td></tr>`;
+            }
+        }
+
+        // Actions
+        window.openModal = async (id = null) => {
+            let product = { 
+                tipo: 'cadastravel', 
+                descricao: '', 
+                valor: '' 
+            };
+            
+            if (id) {
+                const products = await fetchProducts();
+                const found = products.find(p => p.id === id);
+                if (found) product = found;
+            }
+            
+            const isEdit = !!id;
+
+            const formHTML = `
+                <form id="product-form">
+                    <div class="form-group">
+                        <label>Tipo</label>
+                        <select name="tipo" class="form-control" required>
+                            <option value="cadastravel" ${product.tipo === 'cadastravel' ? 'selected' : ''}>Cadastrável</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Descrição</label>
+                        <input type="text" name="descricao" class="form-control" value="${product.descricao}" required placeholder="Ex: Mensalidade Internet 100MB">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Valor (R$)</label>
+                        <input type="number" step="0.01" name="valor" class="form-control" value="${product.valor}" required placeholder="0,00">
+                    </div>
+                </form>
+            `;
+
+            Modal.show({
+                title: isEdit ? 'Editar Produto' : 'Novo Produto',
+                content: formHTML,
+                confirmText: 'Salvar',
+                onConfirm: async () => {
+                    const form = document.getElementById('product-form');
+                    
+                    const payload = {
+                        tipo: form.querySelector('[name="tipo"]').value,
+                        descricao: form.querySelector('[name="descricao"]').value,
+                        valor: form.querySelector('[name="valor"]').value
+                    };
+
+                    try {
+                        if (isEdit) {
+                            await Products.update(id, payload);
+                        } else {
+                            await Products.create(payload);
+                        }
+                        refreshTable();
+                    } catch (error) {
+                        alert('Erro ao salvar: ' + error.message);
+                    }
+                }
+            });
+        };
+
+        window.deleteProduct = (id) => {
+            Modal.show({
+                title: 'Excluir Produto',
+                content: '<p>Tem certeza que deseja excluir este produto? Esta ação não pode ser desfeita.</p>',
+                confirmText: 'Excluir',
+                type: 'danger',
+                onConfirm: async () => {
+                    try {
+                        await Products.delete(id);
+                        refreshTable();
+                    } catch (error) {
+                        alert('Erro ao excluir: ' + error.message);
+                    }
+                }
+            });
+        };
+    </script>
+</body>
+</html>

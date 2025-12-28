@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Estoque - TunnelX Admin</title>
+
+    <meta name="theme-color" content="#2563EB">
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+    
+    <!-- Favicon -->
+    <link rel="shortcut icon" href="img/favicon.jpg" type="image/x-icon">
+</head>
+<body>
+    <div id="app"></div>
+
+    <script src="js/api.js"></script>
+    <script src="js/main.js"></script>
+    <script>
+        // Data Management
+        async function fetchStocks() {
+            try {
+                return await Stocks.getAll();
+            } catch (error) {
+                console.error('Failed to fetch stocks', error);
+                return [];
+            }
+        }
+
+        async function fetchProducts() {
+            try {
+                return await Products.getAll();
+            } catch (error) {
+                console.error('Failed to fetch products', error);
+                return [];
+            }
+        }
+
+        // Render Page
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                const content = document.getElementById('page-content');
+                if (!content) return;
+
+                content.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                        <div class="search-box" style="display: flex; gap: 0.5rem;">
+                            <!-- Search could be added here -->
+                        </div>
+                        <button class="btn btn-primary" id="btn-add">
+                            <i class="fa-solid fa-plus"></i> Novo Estoque
+                        </button>
+                    </div>
+
+                    <div class="table-container">
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Produto</th>
+                                        <th>Tipo</th>
+                                        <th>Quantidade</th>
+                                        <th>Valor Unit.</th>
+                                        <th style="text-align: right;">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="stocks-table-body">
+                                    <tr><td colspan="5" style="text-align: center; padding: 2rem;">Carregando...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+
+                refreshTable();
+                
+                document.getElementById('btn-add').addEventListener('click', () => openModal());
+
+            }, 100);
+        });
+
+        // Table Logic
+        async function refreshTable() {
+            const tbody = document.getElementById('stocks-table-body');
+            if (!tbody) return;
+
+            try {
+                const stocks = await fetchStocks();
+                
+                if (stocks.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-light); padding: 2rem;">Nenhum item em estoque.</td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = stocks.map(item => `
+                    <tr>
+                        <td>
+                            <div style="font-weight: 500;">${item.Product ? item.Product.descricao : 'Produto Removido'}</div>
+                        </td>
+                        <td>
+                             <span class="badge badge-success">${item.Product ? item.Product.tipo : '-'}</span>
+                        </td>
+                        <td>
+                            <span style="font-weight: 600; color: ${item.quantity > 0 ? 'var(--success-color)' : 'var(--danger-color)'}">
+                                ${item.quantity}
+                            </span>
+                        </td>
+                        <td>R$ ${item.Product ? parseFloat(item.Product.valor).toFixed(2).replace('.', ',') : '0,00'}</td>
+                        <td style="text-align: right;">
+                            <button class="btn btn-sm btn-success" onclick="openMovementModal(${item.id}, 'ENTRY')" title="Entrada">
+                                <i class="fa-solid fa-plus"></i>
+                            </button>
+                            <button class="btn btn-sm btn-danger" onclick="openMovementModal(${item.id}, 'EXIT')" title="Saída">
+                                <i class="fa-solid fa-minus"></i>
+                            </button>
+                            <button class="btn btn-sm btn-info" onclick="openHistoryModal(${item.id})" title="Histórico" style="color: white;">
+                                <i class="fa-solid fa-list"></i>
+                            </button>
+                            <button class="btn btn-sm btn-secondary" onclick="deleteStock(${item.id})" title="Excluir Registro">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--danger-color); padding: 2rem;">Erro ao carregar dados.</td></tr>`;
+            }
+        }
+
+        // Actions
+        window.openModal = async () => {
+            // New Stock Item Modal (Initial Setup)
+            const products = await fetchProducts();
+            
+            const formHTML = `
+                <form id="stock-form">
+                    <div class="form-group">
+                        <label>Produto</label>
+                        <select name="productId" class="form-control" required>
+                            <option value="">Selecione um produto...</option>
+                            ${products.map(p => `
+                                <option value="${p.id}">${p.descricao} (${p.tipo})</option>
+                            `).join('')}
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Quantidade Inicial</label>
+                        <input type="number" name="quantity" class="form-control" value="0" required min="0">
+                    </div>
+                </form>
+            `;
+
+            Modal.show({
+                title: 'Novo Registro de Estoque',
+                content: formHTML,
+                confirmText: 'Salvar',
+                onConfirm: async () => {
+                    const form = document.getElementById('stock-form');
+                    const payload = {
+                        productId: form.querySelector('[name="productId"]').value,
+                        quantity: form.querySelector('[name="quantity"]').value
+                    };
+
+                    try {
+                        await Stocks.create(payload);
+                        refreshTable();
+                    } catch (error) {
+                        alert('Erro ao salvar: ' + error.message);
+                    }
+                }
+            });
+        };
+
+        window.openMovementModal = (id, type) => {
+            const isEntry = type === 'ENTRY';
+            const title = isEntry ? 'Entrada de Estoque' : 'Saída de Estoque';
+            const icon = isEntry ? '<i class="fa-solid fa-arrow-up" style="color: var(--success-color)"></i>' : '<i class="fa-solid fa-arrow-down" style="color: var(--danger-color)"></i>';
+
+            const formHTML = `
+                <div style="text-align: center; margin-bottom: 1rem; font-size: 1.2rem;">
+                    ${icon} <strong>${isEntry ? 'Adicionar' : 'Remover'} Itens</strong>
+                </div>
+                <form id="movement-form">
+                    <div class="form-group">
+                        <label>Quantidade</label>
+                        <input type="number" name="quantity" class="form-control" required min="1" placeholder="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Motivo / Observação</label>
+                        <input type="text" name="reason" class="form-control" placeholder="Ex: Compra, Venda, Perda...">
+                    </div>
+                </form>
+            `;
+
+            Modal.show({
+                title: title,
+                content: formHTML,
+                confirmText: 'Confirmar',
+                type: isEntry ? 'primary' : 'danger',
+                onConfirm: async () => {
+                    const form = document.getElementById('movement-form');
+                    const quantity = form.querySelector('[name="quantity"]').value;
+                    const reason = form.querySelector('[name="reason"]').value;
+
+                    try {
+                        await Stocks.registerMovement(id, type, quantity, reason);
+                        refreshTable();
+                    } catch (error) {
+                        alert('Erro ao registrar movimentação: ' + (error.message || 'Erro desconhecido'));
+                    }
+                }
+            });
+        };
+
+        window.openHistoryModal = async (id) => {
+            try {
+                const history = await Stocks.getHistory(id);
+                
+                let historyHTML = `
+                    <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Tipo</th>
+                                    <th>Qtd.</th>
+                                    <th>Motivo</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+
+                if (history.length === 0) {
+                    historyHTML += `<tr><td colspan="4" style="text-align: center; padding: 1rem;">Nenhum registro encontrado.</td></tr>`;
+                } else {
+                    historyHTML += history.map(h => {
+                        const date = new Date(h.createdAt).toLocaleString('pt-BR');
+                        const isEntry = h.type === 'ENTRY';
+                        const badgeClass = isEntry ? 'badge-success' : 'badge-danger';
+                        const typeLabel = isEntry ? 'Entrada' : 'Saída';
+                        
+                        return `
+                            <tr>
+                                <td style="font-size: 0.9rem;">${date}</td>
+                                <td><span class="badge ${badgeClass}">${typeLabel}</span></td>
+                                <td style="font-weight: bold;">${h.quantity}</td>
+                                <td style="font-size: 0.9rem; color: var(--text-light);">${h.reason || '-'}</td>
+                            </tr>
+                        `;
+                    }).join('');
+                }
+
+                historyHTML += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+
+                Modal.show({
+                    title: 'Histórico de Movimentações',
+                    content: historyHTML,
+                    confirmText: 'Fechar',
+                    onConfirm: () => {} // Just close
+                });
+
+            } catch (error) {
+                alert('Erro ao carregar histórico: ' + error.message);
+            }
+        };
+
+        window.deleteStock = (id) => {
+            Modal.show({
+                title: 'Excluir Registro',
+                content: '<p>Tem certeza que deseja excluir este registro de estoque? O produto não será excluído.</p>',
+                confirmText: 'Excluir',
+                type: 'danger',
+                onConfirm: async () => {
+                    try {
+                        await Stocks.delete(id);
+                        refreshTable();
+                    } catch (error) {
+                        alert('Erro ao excluir: ' + error.message);
+                    }
+                }
+            });
+        };
+    </script>
+</body>
+</html>
