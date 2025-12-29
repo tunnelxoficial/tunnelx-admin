@@ -283,8 +283,7 @@ async function submitForm() {
         // It populates data_limit and total_connections from the plan.
         const connectionData = {
             clientId: client.id,
-            planId: formData.planId,
-            status: 'active', // Active immediately after payment
+            planId: formData.planId,// Active immediately after payment
             internet: true
         };
         
