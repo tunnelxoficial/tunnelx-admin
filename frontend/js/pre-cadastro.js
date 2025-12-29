@@ -135,6 +135,27 @@ function updateCardPreview() {
     document.querySelector('.preview-number').textContent = num;
     document.querySelector('.preview-name').textContent = name.toUpperCase();
     document.querySelector('.preview-expiry').textContent = expiry;
+
+    // Detect Card Brand
+    const cardIcon = document.querySelector('.credit-card-preview i');
+    const cleanNum = num.replace(/\s+/g, '');
+    let iconClass = 'fa-brands fa-cc-visa'; // default
+
+    if (/^5[1-5]/.test(cleanNum) || /^2[2-7]/.test(cleanNum)) {
+        iconClass = 'fa-brands fa-cc-mastercard';
+    } else if (/^3[47]/.test(cleanNum)) {
+        iconClass = 'fa-brands fa-cc-amex';
+    } else if (/^6(?:011|5)/.test(cleanNum)) {
+        iconClass = 'fa-brands fa-cc-discover';
+    } else if (/^3(?:0[0-5]|[68])/.test(cleanNum)) {
+        iconClass = 'fa-brands fa-cc-diners-club';
+    } else if (/^35/.test(cleanNum)) {
+        iconClass = 'fa-brands fa-cc-jcb';
+    } else if (/^4/.test(cleanNum)) {
+        iconClass = 'fa-brands fa-cc-visa';
+    }
+
+    cardIcon.className = iconClass;
 }
 
 async function loadPlans() {
