@@ -1,5 +1,6 @@
 let currentStep = 1;
 const totalSteps = 4;
+let cachedPlans = [];
 
 const formData = {
     // Step 1
@@ -139,6 +140,7 @@ function updateCardPreview() {
 async function loadPlans() {
     try {
         const plans = await Api.get('/plans');
+        cachedPlans = plans;
         const container = document.getElementById('plans-container');
         
         if (plans.length === 0) {
@@ -146,18 +148,54 @@ async function loadPlans() {
             return;
         }
         
-        container.innerHTML = plans.map(plan => `
+        container.innerHTML = plans.map(plan => {
+            let totalProductPrice = 0;
+            let hasProducts = false;
+            
+            if (plan.products && plan.products.length > 0) {
+                totalProductPrice = plan.products.reduce((acc, p) => acc + parseFloat(p.valor), 0);
+                hasProducts = true;
+            }
+
+            let priceDisplay = '';
+            let noteDisplay = '';
+
+            if (hasProducts) {
+                priceDisplay = `
+                    <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+                        <div style="font-size: 1.25rem; font-weight: 700; color: var(--primary-color);">
+                            R$ ${totalProductPrice.toFixed(2).replace('.', ',')} <span style="font-size: 0.8rem; font-weight: 400; color: var(--text-color);">hoje</span>
+                        </div>
+                        <div style="font-size: 0.9rem; color: var(--text-light);">
+                            + R$ ${parseFloat(plan.price).toFixed(2).replace('.', ',')}/${plan.cycle.toLowerCase()} (próx. mês)
+                        </div>
+                    </div>
+                `;
+                noteDisplay = `<li style="color: var(--primary-color); font-weight: 500;"><i class="fa-solid fa-gift"></i> Inclui equipamentos/instalação</li>`;
+            } else {
+                priceDisplay = `
+                    <div class="plan-price">
+                        R$ ${parseFloat(plan.price).toFixed(2).replace('.', ',')}
+                        <span style="font-size: 0.8rem; font-weight: 400; color: var(--text-light);">/${plan.cycle.toLowerCase()}</span>
+                    </div>
+                `;
+                noteDisplay = `<li style="color: var(--text-light); font-size: 0.85rem;"><i class="fa-solid fa-calendar-check"></i> Cobrança imediata</li>`;
+            }
+
+            return `
             <div class="plan-card" onclick="selectPlan(${plan.id}, this)" data-id="${plan.id}">
                 <div class="plan-name">${plan.name}</div>
-                <div class="plan-price">R$ ${parseFloat(plan.price).toFixed(2).replace('.', ',')}<span style="font-size: 0.8rem; font-weight: 400; color: var(--text-light);">/${plan.cycle.toLowerCase()}</span></div>
+                ${priceDisplay}
                 <div class="plan-data">${plan.dataLimit} MB</div>
                 <ul class="plan-features">
                     <li><i class="fa-solid fa-check" style="color: var(--secondary-color)"></i> Conexões: ${plan.total_connections || 1}</li>
                     <li><i class="fa-solid fa-check" style="color: var(--secondary-color)"></i> Suporte 24/7</li>
                     <li><i class="fa-solid fa-check" style="color: var(--secondary-color)"></i> Alta Velocidade</li>
+                    ${noteDisplay}
                 </ul>
             </div>
-        `).join('');
+            `;
+        }).join('');
     } catch (error) {
         console.error('Erro ao carregar planos', error);
         document.getElementById('plans-container').innerHTML = '<p class="error">Erro ao carregar planos.</p>';
@@ -254,6 +292,66 @@ function updateUI() {
     
     prevBtn.style.visibility = currentStep === 1 ? 'hidden' : 'visible';
     nextBtn.textContent = currentStep === totalSteps ? 'Finalizar Pagamento' : 'Próximo';
+
+    if (currentStep === 4) {
+        updateCheckoutSummary();
+    }
+}
+
+function updateCheckoutSummary() {
+    const summary = document.getElementById('checkout-summary');
+    if (!summary) return;
+
+    const plan = cachedPlans.find(p => p.id == formData.planId);
+    if (!plan) {
+        summary.innerHTML = '<p>Plano não selecionado.</p>';
+        return;
+    }
+
+    let totalProductPrice = 0;
+    let hasProducts = false;
+    if (plan.products && plan.products.length > 0) {
+        totalProductPrice = plan.products.reduce((acc, p) => acc + parseFloat(p.valor), 0);
+        hasProducts = true;
+    }
+
+    let html = '';
+    if (hasProducts) {
+        html = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <span style="font-weight: 500;">Plano:</span>
+                <span>${plan.name}</span>
+            </div>
+            <hr style="margin: 0.5rem 0; border-color: var(--border-color); opacity: 0.5;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <span style="color: var(--text-light);">Adesão / Equipamentos:</span>
+                <span style="font-weight: 600;">R$ ${totalProductPrice.toFixed(2).replace('.', ',')}</span>
+            </div>
+             <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: var(--text-light);">Mensalidade (próx. mês):</span>
+                <span>R$ ${parseFloat(plan.price).toFixed(2).replace('.', ',')}</span>
+            </div>
+            <div style="margin-top: 1rem; text-align: right; font-size: 1.1rem; font-weight: 700; color: var(--primary-color);">
+                Total Hoje: R$ ${totalProductPrice.toFixed(2).replace('.', ',')}
+            </div>
+        `;
+    } else {
+        html = `
+             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <span style="font-weight: 500;">Plano:</span>
+                <span>${plan.name}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: var(--text-light);">Mensalidade:</span>
+                <span style="font-weight: 600;">R$ ${parseFloat(plan.price).toFixed(2).replace('.', ',')}</span>
+            </div>
+             <div style="margin-top: 1rem; text-align: right; font-size: 1.1rem; font-weight: 700; color: var(--primary-color);">
+                Total Hoje: R$ ${parseFloat(plan.price).toFixed(2).replace('.', ',')}
+            </div>
+        `;
+    }
+
+    summary.innerHTML = html;
 }
 
 async function submitForm() {

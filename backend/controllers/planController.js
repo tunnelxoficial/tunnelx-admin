@@ -1,4 +1,5 @@
 const Plan = require('../models/Plan');
+const Product = require('../models/Product');
 
 const planController = {
     // List all plans
@@ -7,7 +8,30 @@ const planController = {
             const plans = await Plan.findAll({
                 order: [['name', 'ASC']]
             });
-            res.json(plans);
+
+            // Parse product_ids and fetch product details for each plan
+            const plansWithProducts = await Promise.all(plans.map(async (plan) => {
+                const planJson = plan.toJSON();
+                let products = [];
+                if (plan.product_ids) {
+                    try {
+                        const ids = JSON.parse(plan.product_ids);
+                        if (Array.isArray(ids) && ids.length > 0) {
+                            products = await Product.findAll({
+                                where: {
+                                    id: ids
+                                }
+                            });
+                        }
+                    } catch (e) {
+                        console.error('Error parsing product_ids for plan', plan.id, e);
+                    }
+                }
+                planJson.products = products;
+                return planJson;
+            }));
+
+            res.json(plansWithProducts);
         } catch (error) {
             console.error('Erro ao buscar planos:', error);
             res.status(500).json({ error: 'Erro ao buscar planos' });
