@@ -1,5 +1,6 @@
 const Plan = require('../models/Plan');
 const Product = require('../models/Product');
+const Stock = require('../models/Stock');
 
 const planController = {
     // List all plans
@@ -20,7 +21,8 @@ const planController = {
                             products = await Product.findAll({
                                 where: {
                                     id: ids
-                                }
+                                },
+                                include: [{ model: Stock }]
                             });
                         }
                     } catch (e) {
@@ -31,7 +33,22 @@ const planController = {
                 return planJson;
             }));
 
-            res.json(plansWithProducts);
+            // Filter plans based on stock availability
+            const availablePlans = plansWithProducts.filter(plan => {
+                // If no products, it's always available
+                if (!plan.products || plan.products.length === 0) {
+                    return true;
+                }
+
+                // If has products, check if ALL are in stock
+                const allProductsInStock = plan.products.every(product => {
+                    return product.Stock && product.Stock.quantity > 0;
+                });
+
+                return allProductsInStock;
+            });
+
+            res.json(availablePlans);
         } catch (error) {
             console.error('Erro ao buscar planos:', error);
             res.status(500).json({ error: 'Erro ao buscar planos' });
