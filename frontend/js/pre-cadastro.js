@@ -1,0 +1,322 @@
+let currentStep = 1;
+const totalSteps = 4;
+
+const formData = {
+    // Step 1
+    name: '',
+    cpf: '',
+    email: '',
+    phone: '', // whatsapp
+    
+    // Step 2
+    cep: '',
+    logradouro: '',
+    numero: '',
+    complemento: '',
+    bairro: '',
+    cidade: '',
+    uf: '',
+
+    // Step 3
+    planId: null,
+
+    // Step 4
+    cardName: '',
+    cardNumber: '',
+    cardExpiry: '',
+    cardCvc: ''
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+    init();
+});
+
+function init() {
+    updateUI();
+    loadPlans();
+    
+    // Masking helpers (simple version)
+    setupMasks();
+}
+
+function setupMasks() {
+    const cpfInput = document.getElementById('cpf');
+    if (cpfInput) {
+        cpfInput.addEventListener('input', (e) => {
+            let v = e.target.value.replace(/\D/g, '');
+            if (v.length > 11) v = v.slice(0, 11);
+            e.target.value = v.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+        });
+    }
+
+    const phoneInput = document.getElementById('phone');
+    if (phoneInput) {
+        phoneInput.addEventListener('input', (e) => {
+            let v = e.target.value.replace(/\D/g, '');
+            if (v.length > 11) v = v.slice(0, 11);
+            if (v.length > 10) {
+                 e.target.value = v.replace(/^(\d{2})(\d{5})(\d{4})/, '($1) $2-$3');
+            } else {
+                 e.target.value = v.replace(/^(\d{2})(\d{4})(\d{0,4})/, '($1) $2-$3');
+            }
+        });
+    }
+
+    const cepInput = document.getElementById('cep');
+    if (cepInput) {
+        cepInput.addEventListener('blur', async (e) => {
+            const cep = e.target.value.replace(/\D/g, '');
+            if (cep.length === 8) {
+                await fetchAddress(cep);
+            }
+        });
+        cepInput.addEventListener('input', (e) => {
+            let v = e.target.value.replace(/\D/g, '');
+            if (v.length > 8) v = v.slice(0, 8);
+            e.target.value = v.replace(/^(\d{5})(\d{3})/, '$1-$2');
+        });
+    }
+    
+    // Credit Card Masks
+    const ccNumber = document.getElementById('cardNumber');
+    if (ccNumber) {
+        ccNumber.addEventListener('input', (e) => {
+            let v = e.target.value.replace(/\D/g, '');
+            if (v.length > 16) v = v.slice(0, 16);
+            e.target.value = v.replace(/(\d{4})(?=\d)/g, '$1 ');
+            updateCardPreview();
+        });
+    }
+    
+    const ccName = document.getElementById('cardName');
+    if (ccName) ccName.addEventListener('input', updateCardPreview);
+    
+    const ccExpiry = document.getElementById('cardExpiry');
+    if (ccExpiry) {
+        ccExpiry.addEventListener('input', (e) => {
+            let v = e.target.value.replace(/\D/g, '');
+            if (v.length > 4) v = v.slice(0, 4);
+            if (v.length >= 2) {
+                e.target.value = v.slice(0, 2) + '/' + v.slice(2);
+            } else {
+                e.target.value = v;
+            }
+            updateCardPreview();
+        });
+    }
+}
+
+async function fetchAddress(cep) {
+    try {
+        document.getElementById('cep').parentElement.classList.add('loading');
+        const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+        const data = await response.json();
+        
+        if (!data.erro) {
+            document.getElementById('logradouro').value = data.logradouro;
+            document.getElementById('bairro').value = data.bairro;
+            document.getElementById('cidade').value = data.localidade;
+            document.getElementById('uf').value = data.uf;
+            document.getElementById('numero').focus();
+        }
+    } catch (error) {
+        console.error('Erro ao buscar CEP', error);
+    } finally {
+        document.getElementById('cep').parentElement.classList.remove('loading');
+    }
+}
+
+function updateCardPreview() {
+    const num = document.getElementById('cardNumber').value || '0000 0000 0000 0000';
+    const name = document.getElementById('cardName').value || 'NOME DO TITULAR';
+    const expiry = document.getElementById('cardExpiry').value || 'MM/AA';
+    
+    document.querySelector('.preview-number').textContent = num;
+    document.querySelector('.preview-name').textContent = name.toUpperCase();
+    document.querySelector('.preview-expiry').textContent = expiry;
+}
+
+async function loadPlans() {
+    try {
+        const plans = await Api.get('/plans');
+        const container = document.getElementById('plans-container');
+        
+        if (plans.length === 0) {
+            container.innerHTML = '<p>Nenhum plano disponível no momento.</p>';
+            return;
+        }
+        
+        container.innerHTML = plans.map(plan => `
+            <div class="plan-card" onclick="selectPlan(${plan.id}, this)" data-id="${plan.id}">
+                <div class="plan-name">${plan.name}</div>
+                <div class="plan-price">R$ ${parseFloat(plan.price).toFixed(2).replace('.', ',')}<span style="font-size: 0.8rem; font-weight: 400; color: var(--text-light);">/${plan.cycle.toLowerCase()}</span></div>
+                <div class="plan-data">${plan.dataLimit} MB</div>
+                <ul class="plan-features">
+                    <li><i class="fa-solid fa-check" style="color: var(--secondary-color)"></i> Conexões: ${plan.total_connections || 1}</li>
+                    <li><i class="fa-solid fa-check" style="color: var(--secondary-color)"></i> Suporte 24/7</li>
+                    <li><i class="fa-solid fa-check" style="color: var(--secondary-color)"></i> Alta Velocidade</li>
+                </ul>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Erro ao carregar planos', error);
+        document.getElementById('plans-container').innerHTML = '<p class="error">Erro ao carregar planos.</p>';
+    }
+}
+
+function selectPlan(id, element) {
+    formData.planId = id;
+    
+    // Update UI
+    document.querySelectorAll('.plan-card').forEach(el => el.classList.remove('selected'));
+    element.classList.add('selected');
+}
+
+function nextStep() {
+    if (!validateStep(currentStep)) return;
+    
+    saveStepData(currentStep);
+    
+    if (currentStep < totalSteps) {
+        currentStep++;
+        updateUI();
+    } else {
+        submitForm();
+    }
+}
+
+function prevStep() {
+    if (currentStep > 1) {
+        currentStep--;
+        updateUI();
+    }
+}
+
+function validateStep(step) {
+    let isValid = true;
+    const panel = document.getElementById(`step-${step}`);
+    const inputs = panel.querySelectorAll('input[required], select[required]');
+    
+    inputs.forEach(input => {
+        if (!input.value.trim()) {
+            isValid = false;
+            input.style.borderColor = 'red';
+            setTimeout(() => input.style.borderColor = '', 3000);
+        }
+    });
+    
+    if (step === 3 && !formData.planId) {
+        isValid = false;
+        alert('Por favor, selecione um plano.');
+    }
+    
+    return isValid;
+}
+
+function saveStepData(step) {
+    if (step === 1) {
+        formData.name = document.getElementById('name').value;
+        formData.email = document.getElementById('email').value;
+        formData.phone = document.getElementById('phone').value;
+        formData.cpf = document.getElementById('cpf').value;
+    } else if (step === 2) {
+        formData.cep = document.getElementById('cep').value;
+        formData.logradouro = document.getElementById('logradouro').value;
+        formData.numero = document.getElementById('numero').value;
+        formData.complemento = document.getElementById('complemento').value;
+        formData.bairro = document.getElementById('bairro').value;
+        formData.cidade = document.getElementById('cidade').value;
+        formData.uf = document.getElementById('uf').value;
+    } else if (step === 4) {
+        formData.cardName = document.getElementById('cardName').value;
+        formData.cardNumber = document.getElementById('cardNumber').value;
+        formData.cardExpiry = document.getElementById('cardExpiry').value;
+        formData.cardCvc = document.getElementById('cardCvc').value;
+    }
+}
+
+function updateUI() {
+    // Update Panels
+    document.querySelectorAll('.step-panel').forEach(panel => panel.classList.remove('active'));
+    document.getElementById(`step-${currentStep}`).classList.add('active');
+    
+    // Update Steps Indicator
+    document.querySelectorAll('.step-item').forEach((item, index) => {
+        const stepNum = index + 1;
+        item.classList.remove('active', 'completed');
+        if (stepNum === currentStep) item.classList.add('active');
+        if (stepNum < currentStep) item.classList.add('completed');
+    });
+    
+    // Update Buttons
+    const prevBtn = document.getElementById('btn-prev');
+    const nextBtn = document.getElementById('btn-next');
+    
+    prevBtn.style.visibility = currentStep === 1 ? 'hidden' : 'visible';
+    nextBtn.textContent = currentStep === totalSteps ? 'Finalizar Pagamento' : 'Próximo';
+}
+
+async function submitForm() {
+    const nextBtn = document.getElementById('btn-next');
+    nextBtn.disabled = true;
+    nextBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processando...';
+    
+    try {
+        // 1. Create Client
+        const clientData = {
+            name: formData.name,
+            email: formData.email,
+            whatsapp: formData.phone,
+            cpf: formData.cpf,
+            cep: formData.cep,
+            logradouro: formData.logradouro,
+            complemento: formData.complemento,
+            bairro: formData.bairro,
+            cidade: formData.cidade,
+            uf: formData.uf
+        };
+        
+        const client = await Api.post('/clients', clientData);
+        
+        // 2. Create Connection (linked to plan)
+        // Note: The backend logic for connection creation expects 'clientId' and 'planId'.
+        // It populates data_limit and total_connections from the plan.
+        const connectionData = {
+            clientId: client.id,
+            planId: formData.planId,
+            status: 'active', // Active immediately after payment
+            internet: true
+        };
+        
+        await Api.post('/connections', connectionData);
+        
+        // 3. Show Success
+        showSuccess();
+        
+    } catch (error) {
+        console.error('Erro no checkout:', error);
+        alert('Erro ao processar seu cadastro: ' + (error.message || 'Tente novamente.'));
+        nextBtn.disabled = false;
+        nextBtn.textContent = 'Finalizar Pagamento';
+    }
+}
+
+function showSuccess() {
+    // Hide all steps
+    document.querySelectorAll('.step-panel').forEach(panel => panel.classList.remove('active'));
+    
+    // Show success step
+    document.getElementById('step-success').classList.add('active');
+    
+    // Hide footer
+    document.querySelector('.checkout-footer').style.display = 'none';
+    
+    // Update all steps to completed visual state
+    document.querySelectorAll('.step-item').forEach(item => {
+        item.classList.remove('active');
+        item.classList.add('completed');
+    });
+    
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}

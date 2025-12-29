@@ -36,7 +36,7 @@ const Connection = sequelize.define('Connection', {
     },
     status: {
         type: DataTypes.STRING,
-        defaultValue: 'active' // active, inactive
+        defaultValue: 'payment_pending' // active, inactive, payment_pending
     },
     internet: {
         type: DataTypes.BOOLEAN,

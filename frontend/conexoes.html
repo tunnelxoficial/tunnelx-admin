@@ -335,8 +335,8 @@
                             <span style="font-weight: 500;">${conn.total_connections}</span>
                         </td>
                         <td>
-                            <span class="badge ${conn.status === 'active' ? 'badge-success' : 'badge-danger'}">
-                                ${conn.status === 'active' ? 'Ativo' : 'Inativo'}
+                            <span class="badge ${conn.status === 'active' ? 'badge-success' : (conn.status === 'payment_pending' ? 'badge-warning' : 'badge-danger')}">
+                                ${conn.status === 'active' ? 'Ativo' : (conn.status === 'payment_pending' ? 'Pendente' : 'Inativo')}
                             </span>
                         </td>
                         <td class="status-file-cell" data-id="${conn.id}">

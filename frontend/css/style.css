@@ -523,6 +523,11 @@ tr:last-child td {
     color: #1E40AF;
 }
 
+.badge-warning {
+    background-color: #FEF3C7;
+    color: #92400E;
+}
+
 /* Login Page Styles */
 .login-page {
     display: flex;
