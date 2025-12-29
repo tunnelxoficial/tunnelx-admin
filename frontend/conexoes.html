@@ -172,7 +172,6 @@
                                     <tr>
                                         <th>Nome</th>
                                         <th>Plano</th>
-                                        <th>Telefone</th>
                                         <th>Pacote</th>
                                         <th>Conexões</th>
                                         <th>Status</th>
@@ -182,7 +181,7 @@
                                     </tr>
                                 </thead>
                                 <tbody id="connections-table-body">
-                                    <tr><td colspan="9" style="text-align: center; padding: 2rem;">Carregando...</td></tr>
+                                    <tr><td colspan="8" style="text-align: center; padding: 2rem;">Carregando...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -316,7 +315,7 @@
                 const connections = await fetchConnections();
                 
                 if (connections.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-light); padding: 2rem;">Nenhuma conexão encontrada.</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-light); padding: 2rem;">Nenhuma conexão encontrada.</td></tr>`;
                     return;
                 }
 
@@ -327,7 +326,6 @@
                             <div style="font-size: 0.75rem; color: var(--text-light);">${conn.email}</div>
                         </td>
                         <td>${conn.Plan ? conn.Plan.name : '-'}</td>
-                        <td>${conn.phone}</td>
                         <td>
                             <span class="badge badge-success">${conn.data_limit} MB</span>
                         </td>
@@ -336,7 +334,7 @@
                         </td>
                         <td>
                             <span class="badge ${conn.status === 'active' ? 'badge-success' : (conn.status === 'payment_pending' ? 'badge-warning' : 'badge-danger')}">
-                                ${conn.status === 'active' ? 'Ativo' : (conn.status === 'payment_pending' ? 'Pendente' : 'Inativo')}
+                                ${conn.status === 'active' ? 'Ativo' : (conn.status === 'payment_pending' ? 'Pendente de pagamento' : 'Inativo')}
                             </span>
                         </td>
                         <td class="status-file-cell" data-id="${conn.id}">
@@ -361,7 +359,7 @@
                     </tr>
                 `).join('');
             } catch (error) {
-                tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--danger-color); padding: 2rem;">Erro ao carregar dados.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--danger-color); padding: 2rem;">Erro ao carregar dados.</td></tr>`;
             }
         }
 
