@@ -59,7 +59,7 @@ exports.create = async (req, res) => {
             email: clientData.email,
             total_connections: finalTotalConnections,
             data_limit: finalDataLimit,
-            status: status || 'active',
+            status: status || 'payment_pending',
             ClientId: clientId,
             PlanId: planId
         });
