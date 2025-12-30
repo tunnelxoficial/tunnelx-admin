@@ -1,7 +1,7 @@
 const axios = require('axios');
 
 const ASAAS_API_KEY = '$aact_prod_000MzkwODA2MWY2OGM3MWRlMDU2NWM3MzJlNzZmNGZhZGY6OjViYWVhYTQ1LTQ5Y2EtNDFjMi1iMzg0LTczYjNiOTc4MTE3YTo6JGFhY2hfYzI5ZTFlMWYtNGE1ZS00NWE5LWI4MjctZWU0NzI3ZGYzMzI0';
-const ASAAS_URL = 'https://api-sandbox.asaas.com/v3';
+const ASAAS_URL = 'https://api.asaas.com/v3';
 
 const asaasApi = axios.create({
     baseURL: ASAAS_URL,
