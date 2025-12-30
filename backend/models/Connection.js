@@ -68,6 +68,22 @@ const Connection = sequelize.define('Connection', {
             key: 'id'
         },
         allowNull: true
+    },
+    asaas_customer_id: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    asaas_subscription_id: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    asaas_payment_id: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    payment_status: {
+        type: DataTypes.STRING,
+        allowNull: true
     }
 }, {
     timestamps: true

@@ -63,9 +63,12 @@ const checkoutController = {
             const cardDataWithIp = { ...cardData, remoteIp };
 
             // 4. Process Payments
+            let subscription = null;
+            let payment = null;
+
             if (hasProducts) {
                 // Charge products immediately
-                await asaasService.createPayment(
+                payment = await asaasService.createPayment(
                     asaasCustomer.id,
                     productTotal,
                     cardDataWithIp,
@@ -79,7 +82,7 @@ const checkoutController = {
                 nextMonth.setMonth(nextMonth.getMonth() + 1);
                 const nextDueDate = nextMonth.toISOString().split('T')[0];
 
-                await asaasService.createSubscription(
+                subscription = await asaasService.createSubscription(
                     asaasCustomer.id,
                     plan,
                     cardDataWithIp,
@@ -89,7 +92,7 @@ const checkoutController = {
                 );
             } else {
                 // Just create subscription (starts immediately by default)
-                await asaasService.createSubscription(
+                subscription = await asaasService.createSubscription(
                     asaasCustomer.id,
                     plan,
                     cardDataWithIp,
@@ -97,6 +100,9 @@ const checkoutController = {
                     null, // Let Asaas decide (usually today)
                     client.id
                 );
+                // If subscription is immediate, it usually generates a payment immediately, 
+                // but we might not get the payment ID in the subscription response directly 
+                // unless we query for it, but subscription ID is enough.
             }
 
             // 5. Create Connection
@@ -107,10 +113,14 @@ const checkoutController = {
                 email: client.email,
                 total_connections: plan.total_connections || 1,
                 data_limit: plan.dataLimit,
-                status: 'active', // Payment successful
+                status: 'payment_pending', // Payment successful
                 internet: true,
                 ClientId: client.id,
-                PlanId: plan.id
+                PlanId: plan.id,
+                asaas_customer_id: asaasCustomer.id,
+                asaas_subscription_id: subscription ? subscription.id : null,
+                asaas_payment_id: payment ? payment.id : null,
+                payment_status: 'WAIT' // Assuming success if no error thrown
             }, { transaction: t });
 
             await t.commit();
