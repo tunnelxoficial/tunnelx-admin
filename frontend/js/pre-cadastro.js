@@ -381,39 +381,41 @@ async function submitForm() {
     nextBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processando...';
     
     try {
-        // 1. Create Client
-        const clientData = {
-            name: formData.name,
-            email: formData.email,
-            whatsapp: formData.phone,
-            cpf: formData.cpf,
-            cep: formData.cep,
-            logradouro: formData.logradouro,
-            complemento: formData.complemento,
-            bairro: formData.bairro,
-            cidade: formData.cidade,
-            uf: formData.uf
+        // Prepare Checkout Data
+        const [expMonth, expYear] = formData.cardExpiry.split('/');
+        
+        const payload = {
+            clientData: {
+                name: formData.name,
+                email: formData.email,
+                whatsapp: formData.phone,
+                cpf: formData.cpf,
+                cep: formData.cep,
+                logradouro: formData.logradouro,
+                complemento: formData.complemento,
+                bairro: formData.bairro,
+                cidade: formData.cidade,
+                uf: formData.uf
+            },
+            planId: formData.planId,
+            cardData: {
+                holderName: formData.cardName,
+                number: formData.cardNumber.replace(/\s+/g, ''),
+                expiryMonth: expMonth,
+                expiryYear: '20' + expYear,
+                ccv: formData.cardCvc
+            }
         };
+
+        // Call Checkout Endpoint
+        const response = await Api.post('/checkout', payload);
         
-        const client = await Api.post('/clients', clientData);
-        
-        // 2. Create Connection (linked to plan)
-        // Note: The backend logic for connection creation expects 'clientId' and 'planId'.
-        // It populates data_limit and total_connections from the plan.
-        const connectionData = {
-            clientId: client.id,
-            planId: formData.planId,// Active immediately after payment
-            internet: true
-        };
-        
-        await Api.post('/connections', connectionData);
-        
-        // 3. Show Success
+        // Show Success
         showSuccess();
         
     } catch (error) {
         console.error('Erro no checkout:', error);
-        alert('Erro ao processar seu cadastro: ' + (error.message || 'Tente novamente.'));
+        alert('Erro ao processar seu pagamento: ' + (error.message || 'Verifique os dados do cartão e tente novamente.'));
         nextBtn.disabled = false;
         nextBtn.textContent = 'Finalizar Pagamento';
     }
