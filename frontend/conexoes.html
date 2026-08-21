@@ -475,7 +475,7 @@
            fechar. Voltar e obrigatorio: se o modal for fechado com o painel
            ainda no body, ele fica orfao na pagina.
            ------------------------------------------------------------------ */
-        const selectAberto = { painel: null, origem: null, gatilho: null, aoRolar: null, aoClicar: null };
+        const selectAberto = { painel: null, origem: null, gatilho: null, quadro: null, aoClicar: null, ultimo: null };
 
         function posicionarPainel() {
             const { painel, gatilho } = selectAberto;
@@ -518,9 +518,9 @@
             s.painel.removeAttribute('style');
             s.origem.appendChild(s.painel);
 
-            window.removeEventListener('resize', s.aoRolar);
-            // captura: o corpo do modal rola sem borbulhar para a window.
-            window.removeEventListener('scroll', s.aoRolar, true);
+            if (s.quadro) cancelAnimationFrame(s.quadro);
+            s.quadro = null;
+            s.ultimo = null;
             document.removeEventListener('click', s.aoClicar, true);
 
             s.painel = null; s.origem = null; s.gatilho = null;
@@ -544,9 +544,23 @@
             painel.classList.add('show');
             posicionarPainel();
 
-            selectAberto.aoRolar = () => posicionarPainel();
-            window.addEventListener('resize', selectAberto.aoRolar);
-            window.addEventListener('scroll', selectAberto.aoRolar, true);
+            /* Acompanha o gatilho por quadro, e nao por evento de scroll.
+               O corpo do modal rola por conta propria; um listener de 'scroll'
+               na window depende de o evento chegar ate la, e isso varia com o
+               navegador. Comparar o retangulo funciona sempre - e cobre tambem
+               redimensionamento e mudanca de layout, sem listener nenhum.
+               So roda enquanto o painel esta aberto. */
+            const acompanhar = () => {
+                if (!selectAberto.painel) return;
+                const r = selectAberto.gatilho.getBoundingClientRect();
+                const chave = r.top + ':' + r.left + ':' + r.width;
+                if (chave !== selectAberto.ultimo) {
+                    selectAberto.ultimo = chave;
+                    posicionarPainel();
+                }
+                selectAberto.quadro = requestAnimationFrame(acompanhar);
+            };
+            selectAberto.quadro = requestAnimationFrame(acompanhar);
 
             // Fase de captura: o painel volta para dentro do modal ANTES de
             // qualquer outro handler rodar. E o que impede que fechar o modal
