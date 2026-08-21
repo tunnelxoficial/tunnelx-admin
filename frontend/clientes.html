@@ -63,12 +63,12 @@
                                         <th>Email</th>
                                         <th>WhatsApp</th>
                                         <th>Cidade/UF</th>
-                                        <th>Bairro</th>
+                                        <th>Acesso ao app</th>
                                         <th style="text-align: right;">Ações</th>
                                     </tr>
                                 </thead>
                                 <tbody id="clients-table-body">
-                                    <tr><td colspan="6" style="text-align: center; padding: 2rem;">Carregando...</td></tr>
+                                    <tr><td colspan="7" style="text-align: center; padding: 2rem;">Carregando...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -91,7 +91,7 @@
                 const clients = await fetchClients();
                 
                 if (clients.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-light); padding: 2rem;">Nenhum cliente encontrado.</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-light); padding: 2rem;">Nenhum cliente encontrado.</td></tr>`;
                     return;
                 }
 
@@ -104,8 +104,11 @@
                         <td>${client.email}</td>
                         <td>${client.whatsapp}</td>
                         <td>${client.cidade || '-'} / ${client.uf || '-'}</td>
-                        <td>${client.bairro || '-'}</td>
+                        <td>${accessBadge(client)}</td>
                         <td style="text-align: right;">
+                            <button class="btn btn-sm btn-secondary" onclick="managePassword(${client.id})" title="${client.has_app_access ? 'Gerar nova senha do app' : 'Liberar acesso ao app'}">
+                                <i class="fa-solid fa-key"></i>
+                            </button>
                             <button class="btn btn-sm btn-secondary" onclick="openModal(${client.id})" title="Editar">
                                 <i class="fa-solid fa-pen"></i>
                             </button>
@@ -116,7 +119,7 @@
                     </tr>
                 `).join('');
             } catch (error) {
-                tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--danger-color); padding: 2rem;">Erro ao carregar dados.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--danger-color); padding: 2rem;">Erro ao carregar dados.</td></tr>`;
             }
         }
 
@@ -200,6 +203,25 @@
                         <label>Complemento</label>
                         <input type="text" name="complemento" class="form-control" value="${client.complemento}" placeholder="Apto, Bloco, etc">
                     </div>
+
+                    <div style="border-top: 1px solid var(--border-color, #e5e7eb); margin-top: 1rem; padding-top: 1rem;">
+                        <label style="display: block; font-weight: 600; margin-bottom: 0.35rem;">Acesso ao aplicativo</label>
+                        <p style="color: var(--text-light, #6b7280); font-size: 0.85rem; margin: 0 0 0.75rem;">
+                            O cliente entra no app com o <strong>CPF</strong> acima e uma senha gerada aqui.
+                            As conexões dele são importadas sozinhas depois do login.
+                        </p>
+                        ${isEdit
+                            ? `<div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                                   ${accessBadge(client)}
+                                   <button type="button" class="btn btn-sm btn-secondary" onclick="managePassword(${client.id || 0})">
+                                       <i class="fa-solid fa-key"></i> ${client.has_app_access ? 'Gerar nova senha' : 'Liberar acesso'}
+                                   </button>
+                               </div>`
+                            : `<label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                                   <input type="checkbox" name="generatePassword" id="gen-password" checked>
+                                   <span>Gerar senha de acesso ao salvar</span>
+                               </label>`}
+                    </div>
                 </form>
             `;
 
@@ -223,13 +245,19 @@
                         complemento: form.querySelector('[name="complemento"]').value
                     };
 
+                    // So no cadastro novo: na edicao a senha e gerada pelo botao
+                    // dedicado, para nao trocar credencial ao corrigir um endereco.
+                    const gerar = form.querySelector('[name="generatePassword"]');
+                    if (gerar && gerar.checked) payload.generatePassword = true;
+
                     try {
-                        if (isEdit) {
-                            await Clients.update(id, payload);
-                        } else {
-                            await Clients.create(payload);
-                        }
+                        const salvo = isEdit
+                            ? await Clients.update(id, payload)
+                            : await Clients.create(payload);
                         refreshTable();
+                        if (salvo && salvo.generated_password) {
+                            showPassword(salvo.name || payload.name, salvo.cpf || payload.cpf, salvo.generated_password);
+                        }
                     } catch (error) {
                         alert('Erro ao salvar: ' + error.message);
                     }
@@ -264,6 +292,114 @@
                 console.error('Erro ao buscar CEP:', error);
                 alert('Erro ao buscar endereço. Verifique sua conexão.');
             }
+        };
+
+        // Selo de acesso: responde de relance quem ja consegue entrar no app.
+        window.accessBadge = (client) => {
+            if (client.has_app_access) {
+                return '<span style="display:inline-flex;align-items:center;gap:.35rem;padding:.2rem .55rem;border-radius:999px;background:#dcfce7;color:#166534;font-size:.78rem;font-weight:600;">'
+                     + '<i class="fa-solid fa-circle-check"></i> Liberado</span>';
+            }
+            if (!client.cpf) {
+                return '<span style="display:inline-flex;align-items:center;gap:.35rem;padding:.2rem .55rem;border-radius:999px;background:#fef3c7;color:#92400e;font-size:.78rem;font-weight:600;">'
+                     + '<i class="fa-solid fa-triangle-exclamation"></i> Sem CPF</span>';
+            }
+            return '<span style="display:inline-flex;align-items:center;gap:.35rem;padding:.2rem .55rem;border-radius:999px;background:#f3f4f6;color:#4b5563;font-size:.78rem;font-weight:600;">'
+                 + '<i class="fa-solid fa-lock"></i> Sem acesso</span>';
+        };
+
+        /**
+         * A senha aparece UMA vez.
+         *
+         * O banco guarda so o hash: nao existe tela de "ver senha". Por isso este
+         * modal e o unico momento em que ela pode ser copiada, e diz isso na cara
+         * do operador antes que ele feche a janela.
+         */
+        window.showPassword = (nome, cpf, senha) => {
+            Modal.show({
+                title: 'Senha de acesso gerada',
+                content: `
+                    <p style="margin-top:0;">Acesso ao aplicativo de <strong>${nome || 'cliente'}</strong>:</p>
+                    <div style="display:grid;gap:.6rem;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:1rem;">
+                        <div>
+                            <div style="font-size:.75rem;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;">Login (CPF)</div>
+                            <div style="font-family:monospace;font-size:1.05rem;">${cpf || '-'}</div>
+                        </div>
+                        <div>
+                            <div style="font-size:.75rem;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;">Senha</div>
+                            <div style="display:flex;align-items:center;gap:.6rem;">
+                                <span id="senha-gerada" style="font-family:monospace;font-size:1.4rem;font-weight:700;letter-spacing:.05em;">${senha}</span>
+                                <button type="button" class="btn btn-sm btn-secondary" onclick="copiarSenha()">
+                                    <i class="fa-solid fa-copy"></i> Copiar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <p style="color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.7rem .8rem;margin-bottom:0;font-size:.88rem;">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                        Anote agora. Esta senha não fica guardada e não pode ser consultada depois — só substituída por uma nova.
+                    </p>
+                `,
+                confirmText: 'Já anotei',
+                onConfirm: async () => {}
+            });
+        };
+
+        window.copiarSenha = async () => {
+            const alvo = document.getElementById('senha-gerada');
+            if (!alvo) return;
+            try {
+                await navigator.clipboard.writeText(alvo.textContent.trim());
+                alvo.style.background = '#dcfce7';
+                setTimeout(() => { alvo.style.background = 'transparent'; }, 900);
+            } catch {
+                // clipboard exige contexto seguro (https): sem ele, seleciona para
+                // o operador copiar no teclado em vez de falhar em silencio.
+                const faixa = document.createRange();
+                faixa.selectNodeContents(alvo);
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(faixa);
+            }
+        };
+
+        window.managePassword = async (id) => {
+            const clients = await fetchClients();
+            const client = clients.find(c => c.id === id);
+            if (!client) return;
+
+            if (!client.cpf) {
+                alert('Cadastre o CPF deste cliente antes: é com ele que o acesso ao aplicativo é feito.');
+                return;
+            }
+
+            const jaTem = client.has_app_access;
+
+            Modal.show({
+                title: jaTem ? 'Gerar nova senha' : 'Liberar acesso ao aplicativo',
+                content: jaTem
+                    ? `<p>Gerar uma nova senha para <strong>${client.name}</strong>?</p>
+                       <p style="color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.7rem .8rem;font-size:.88rem;">
+                         A senha atual deixa de funcionar na hora. Se o cliente estiver com o app aberto,
+                         ele continua conectado até sair — no próximo login precisará da senha nova.
+                       </p>`
+                    : `<p>Criar a senha de acesso de <strong>${client.name}</strong>?</p>
+                       <p style="color:#6b7280;font-size:.9rem;">
+                         Ele passa a entrar no app com o CPF <strong>${client.cpf}</strong> e a senha gerada aqui.
+                       </p>`,
+                confirmText: jaTem ? 'Gerar nova senha' : 'Liberar acesso',
+                type: jaTem ? 'danger' : 'primary',
+                onConfirm: async () => {
+                    try {
+                        const r = await Clients.generatePassword(id);
+                        refreshTable();
+                        // O modal atual fecha ao confirmar; o proximo abre depois.
+                        setTimeout(() => showPassword(r.name, r.cpf, r.password), 60);
+                    } catch (error) {
+                        alert('Erro ao gerar a senha: ' + error.message);
+                    }
+                }
+            });
         };
 
         window.deleteClient = (id) => {

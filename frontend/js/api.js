@@ -107,6 +107,18 @@ const Clients = {
 
     async delete(id) {
         return await Api.delete(`/clients/${id}`);
+    },
+
+    // Gera a senha de acesso do cliente ao aplicativo. A senha em claro vem SO
+    // nesta resposta - o banco guarda apenas o hash. Nao ha como consulta-la
+    // depois; a unica saida e gerar outra.
+    async generatePassword(id) {
+        return await Api.post(`/clients/${id}/password`, {});
+    },
+
+    // Revoga o acesso ao app sem apagar o cadastro nem as conexoes.
+    async revokeAccess(id) {
+        return await Api.delete(`/clients/${id}/password`);
     }
 };
 

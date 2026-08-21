@@ -1,6 +1,5 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/db');
-const bcrypt = require('bcryptjs');
 
 const Client = sequelize.define('Client', {
     id: {
@@ -57,14 +56,31 @@ const Client = sequelize.define('Client', {
     }
 }, {
     timestamps: true,
-    hooks: {
-        beforeCreate: async (client) => {
-            if (!client.password_hash) {
-                const salt = await bcrypt.genSalt(10);
-                client.password_hash = await bcrypt.hash('123456', salt);
-            }
-        }
+    /**
+     * password_hash fora de toda consulta por padrao.
+     *
+     * GET /clients devolvia o hash de todo mundo para quem chamasse a rota. Hash
+     * bcrypt nao e senha, mas e material para ataque offline - e nao ha motivo
+     * nenhum para uma listagem de clientes carregar isso.
+     *
+     * Quem precisa do hash pede explicitamente: Client.scope('withPassword').
+     */
+    defaultScope: {
+        attributes: { exclude: ['password_hash'] }
+    },
+    scopes: {
+        withPassword: {}
     }
 });
+
+/*
+ * NAO existe mais o hook beforeCreate que gravava '123456'.
+ *
+ * Ele dava a TODO cliente novo a mesma senha conhecida. Enquanto o app nao tinha
+ * login isso era inofensivo; a partir de /app/login seria acesso liberado a chave
+ * privada WireGuard de qualquer cliente por quem soubesse o CPF. Agora o cliente
+ * nasce sem senha (password_hash NULL) e sem acesso ao app - o operador gera a
+ * senha no momento de entregar o acesso.
+ */
 
 module.exports = Client;

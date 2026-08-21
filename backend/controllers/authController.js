@@ -49,7 +49,9 @@ exports.login = async (req, res) => {
 
         // Generate Token
         const token = jwt.sign(
-            { id: user.id, email: user.email, role: user.role },
+            // `kind` separa este token do emitido em /app/login: mesma chave de
+            // assinatura, publicos diferentes. Ver middleware/auth.js.
+            { id: user.id, email: user.email, role: user.role, kind: 'admin' },
             SECRET_KEY,
             { expiresIn: '1d' }
         );
