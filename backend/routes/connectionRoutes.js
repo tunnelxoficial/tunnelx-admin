@@ -11,4 +11,9 @@ router.put('/:id', connectionController.update);
 router.delete('/:id', connectionController.delete);
 router.patch('/:id/toggle-internet', connectionController.toggleInternet);
 
+// Dados de conexao sob demanda (config em texto + QR em base64)
+router.get('/:id/files', connectionController.getFiles);
+// Reenfileira a conexao para o worker regerar config/QR com o endpoint atual
+router.patch('/:id/reprovision', connectionController.reprovision);
+
 module.exports = router;

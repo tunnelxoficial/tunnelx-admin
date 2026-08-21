@@ -74,6 +74,14 @@ const Connections = {
         return await Api.delete(`/connections/${id}`);
     },
 
+    async getFiles(id) {
+        return await Api.get(`/connections/${id}/files`);
+    },
+
+    async reprovision(id) {
+        return await Api.request(`/connections/${id}/reprovision`, 'PATCH');
+    },
+
     async toggleInternet(id) {
         // Since toggle uses PATCH and our Api class doesn't have it explicitly mapped, 
         // we can add it or just use custom request. Let's add patch support to Api class implicitly 

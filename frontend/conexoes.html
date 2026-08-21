@@ -175,13 +175,14 @@
                                         <th>Pacote</th>
                                         <th>Conexões</th>
                                         <th>Status</th>
+                                        <th>Pagamento</th>
                                         <th>Status File</th>
                                         <th>Internet</th>
                                         <th style="text-align: right;">Ações</th>
                                     </tr>
                                 </thead>
                                 <tbody id="connections-table-body">
-                                    <tr><td colspan="8" style="text-align: center; padding: 2rem;">Carregando...</td></tr>
+                                    <tr><td colspan="9" style="text-align: center; padding: 2rem;">Carregando...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -191,118 +192,191 @@
                 refreshTable();
                 
                 // Start polling for status file updates
-                setInterval(updateStatusFiles, 30000);
+                // Antes so a celula de Status File era reescrita: mudancas de status e
+                // payment_status vindas do webhook ficavam invisiveis com a pagina aberta.
+                setInterval(refreshTable, 30000);
 
                 document.getElementById('btn-add').addEventListener('click', () => openModal());
 
             }, 100);
         });
 
+        // Badge do estado de pagamento (payment_status e gravado pelo webhook Asaas)
+        function paymentBadge(v) {
+            const map = {
+                PAID:     ['badge-success', 'Pago'],
+                WAIT:     ['badge-warning', 'Aguardando'],
+                OVERDUE:  ['badge-danger',  'Vencido'],
+                REFUNDED: ['badge-info',    'Estornado']
+            };
+            const m = map[v];
+            return m ? `<span class="badge ${m[0]}">${m[1]}</span>`
+                     : '<span class="badge badge-info">Sem cobrança</span>';
+        }
+
         // Helper to render Status File column
         function getStatusFileContent(conn) {
+            const acoes = `
+                <button class="btn btn-sm btn-outline-primary" onclick="showQRCode(${conn.id})" title="Ver QR Code">
+                    <i class="fa-solid fa-qrcode"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-success" onclick="downloadConfig(${conn.id})" title="Baixar .conf (WireGuard)">
+                    <i class="fa-solid fa-download"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="copyConfig(${conn.id}, this)" title="Copiar configuração">
+                    <i class="fa-regular fa-copy"></i>
+                </button>
+                <button class="btn btn-sm btn-secondary" onclick="reprovisionConnection(${conn.id})" title="Regerar config e QR com o endpoint atual">
+                    <i class="fa-solid fa-rotate"></i>
+                </button>`;
+
             if (conn.status_queue === 'WAIT') {
+                // O worker roda a cada 60s. Passando de 5 min, quase sempre significa
+                // que o TunnelX Manager esta fechado ou sem acesso ao banco.
+                const min = conn.updatedAt
+                    ? Math.floor((Date.now() - new Date(conn.updatedAt).getTime()) / 60000)
+                    : 0;
+                if (min >= 5) {
+                    return `
+                        <div class="status-file-loader">
+                            <i class="fa-solid fa-triangle-exclamation" style="color: var(--danger-color);"></i>
+                            <span>Na fila há ${min} min — verifique o TunnelX Manager</span>
+                        </div>`;
+                }
                 return `
                     <div class="status-file-loader">
                         <div class="spinner"></div>
-                        <span>Criando...</span>
-                    </div>
-                `;
-            } else if (conn.status_queue === 'CREATED') {
-                return `
-                    <div style="display: flex; gap: 0.5rem;">
-                        <button class="btn btn-sm btn-outline-primary" onclick="showQRCode(${conn.id})" title="Ver QR Code">
-                            <i class="fa-solid fa-qrcode"></i>
-                        </button>
-                        <button class="btn btn-sm btn-outline-success" onclick="downloadConfig(${conn.id})" title="Baixar Config">
-                            <i class="fa-solid fa-download"></i>
-                        </button>
-                        <button class="btn btn-sm btn-outline-secondary" onclick="copyConfig(${conn.id})" title="Copiar Config">
-                            <i class="fa-regular fa-copy"></i>
-                        </button>
-                    </div>
-                `;
+                        <span>Aguardando fila...</span>
+                    </div>`;
             }
-            return '-';
+
+            if (conn.status_queue === 'CREATED') {
+                return `<div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <span class="badge badge-success">Provisionado</span>${acoes}
+                </div>`;
+            }
+
+            return `<div style="display: flex; gap: 0.5rem; align-items: center;">
+                <span class="badge badge-danger">Não provisionado</span>
+                <button class="btn btn-sm btn-secondary" onclick="reprovisionConnection(${conn.id})" title="Enviar para a fila">
+                    <i class="fa-solid fa-play"></i>
+                </button>
+            </div>`;
         }
 
+        window.reprovisionConnection = (id) => {
+            Modal.show({
+                title: 'Regerar configuração',
+                content: '<p>A configuração e o QR atuais serão substituídos por novos, gerados com o endpoint atual do servidor. O cliente precisará importar o novo arquivo. Continuar?</p>',
+                confirmText: 'Regerar',
+                type: 'danger',
+                onConfirm: async () => {
+                    try {
+                        await Connections.reprovision(id);
+                        refreshTable();
+                    } catch (e) {
+                        alert('Erro ao reenfileirar: ' + e.message);
+                    }
+                }
+            });
+        };
+
         // Action Functions for Status File
+        // Busca config e QR de UMA conexao. O endpoint devolve o QR ja em base64,
+        // eliminando a conversao de Buffer no browser.
+        async function loadConnectionFiles(id) {
+            try {
+                return await Connections.getFiles(id);
+            } catch (e) {
+                alert('Erro ao obter os dados da conexão: ' + e.message);
+                return null;
+            }
+        }
+
         window.showQRCode = async (id) => {
-            const connections = await fetchConnections();
-            const conn = connections.find(c => c.id === id);
-            if (!conn || !conn.qrcode) {
-                alert('QR Code não disponível.');
+            const data = await loadConnectionFiles(id);
+            if (!data || !data.qrcode_base64) {
+                alert('QR Code ainda não disponível. A conexão pode não ter sido provisionada.');
                 return;
             }
 
-            // If qrcode is buffer/blob, convert to base64
-            // Assuming backend sends a buffer array or base64 string
-            // If it's a Buffer array from Sequelize: { type: 'Buffer', data: [...] }
-            let src = '';
-            if (typeof conn.qrcode === 'string') {
-                 src = conn.qrcode.startsWith('data:') ? conn.qrcode : `data:image/png;base64,${conn.qrcode}`;
-            } else if (conn.qrcode && conn.qrcode.type === 'Buffer') {
-                 // Convert buffer to base64
-                 const binary = String.fromCharCode.apply(null, conn.qrcode.data);
-                 const base64 = btoa(binary);
-                 src = `data:image/png;base64,${base64}`;
-            } else {
-                 // Try to handle as raw base64 if it's just bytes
-                 // Or maybe it is already a URL
-                 src = conn.qrcode;
-            }
-
             Modal.show({
-                title: 'QR Code da Conexão',
+                title: 'QR Code da Conexão (WireGuard)',
                 content: `
                     <div style="display: flex; justify-content: center; padding: 1rem;">
-                        <img src="${src}" alt="QR Code" style="max-width: 100%; height: auto; border: 1px solid var(--border-color); border-radius: 0.5rem;">
+                        <img src="data:image/png;base64,${data.qrcode_base64}" alt="QR Code"
+                             style="max-width: 100%; height: auto; border: 1px solid var(--border-color); border-radius: 0.5rem;">
                     </div>
                 `,
                 confirmText: 'Fechar',
                 type: 'primary',
-                onConfirm: () => {} // Just close
+                onConfirm: () => {}
             });
         };
 
         window.downloadConfig = async (id) => {
-            const connections = await fetchConnections();
-            const conn = connections.find(c => c.id === id);
-            if (!conn || !conn.config) {
-                alert('Configuração não disponível.');
+            const data = await loadConnectionFiles(id);
+            if (!data || !data.config) {
+                alert('Configuração ainda não disponível. A conexão pode não ter sido provisionada.');
                 return;
             }
 
-            const element = document.createElement('a');
-            const file = new Blob([conn.config], {type: 'text/plain'});
-            element.href = URL.createObjectURL(file);
-            element.download = `config-${conn.name.replace(/\s+/g, '-').toLowerCase()}.conf`; // Assuming OpenVPN or similar
-            document.body.appendChild(element);
-            element.click();
-            document.body.removeChild(element);
+            // Remove acentos e caracteres de caminho do nome do arquivo
+            const safe = (data.name || 'cliente')
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'cliente';
+
+            const url = URL.createObjectURL(new Blob([data.config], { type: 'text/plain;charset=utf-8' }));
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `tunnelx-${safe}.conf`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
         };
 
-        window.copyConfig = async (id) => {
-            const connections = await fetchConnections();
-            const conn = connections.find(c => c.id === id);
-            if (!conn || !conn.config) {
-                alert('Configuração não disponível.');
+        window.copyConfig = async (id, btn) => {
+            const data = await loadConnectionFiles(id);
+            if (!data || !data.config) {
+                alert('Configuração ainda não disponível. A conexão pode não ter sido provisionada.');
                 return;
             }
 
-            try {
-                await navigator.clipboard.writeText(conn.config);
-                // Show a small toast or alert
-                const originalText = document.activeElement.innerHTML;
-                const btn = document.activeElement;
-                
-                // Visual feedback on the button
+            const original = btn ? btn.innerHTML : null;
+            let ok = false;
+
+            // navigator.clipboard so existe em contexto seguro (https ou localhost)
+            if (navigator.clipboard && window.isSecureContext) {
+                try { await navigator.clipboard.writeText(data.config); ok = true; } catch (e) { ok = false; }
+            }
+
+            if (!ok) {
+                const ta = document.createElement('textarea');
+                ta.value = data.config;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.focus(); ta.select();
+                try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+                document.body.removeChild(ta);
+            }
+
+            // Ultimo recurso: mostra o texto para o operador copiar na mao
+            if (!ok) {
+                Modal.show({
+                    title: 'Copiar configuração',
+                    content: `<textarea readonly style="width:100%;height:260px;font-family:monospace;font-size:.75rem;">${data.config.replace(/</g, '&lt;')}</textarea>`,
+                    confirmText: 'Fechar',
+                    type: 'primary',
+                    onConfirm: () => {}
+                });
+                return;
+            }
+
+            if (btn && original !== null) {
                 btn.innerHTML = '<i class="fa-solid fa-check"></i>';
-                setTimeout(() => {
-                    btn.innerHTML = '<i class="fa-regular fa-copy"></i>';
-                }, 2000);
-                
-            } catch (err) {
-                alert('Erro ao copiar: ' + err);
+                setTimeout(() => { btn.innerHTML = original; }, 2000);
             }
         };
 
@@ -315,7 +389,7 @@
                 const connections = await fetchConnections();
                 
                 if (connections.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-light); padding: 2rem;">Nenhuma conexão encontrada.</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-light); padding: 2rem;">Nenhuma conexão encontrada.</td></tr>`;
                     return;
                 }
 
@@ -337,6 +411,7 @@
                                 ${conn.status === 'active' ? 'Ativo' : (conn.status === 'payment_pending' ? 'Pendente de pagamento' : 'Inativo')}
                             </span>
                         </td>
+                        <td>${paymentBadge(conn.payment_status)}</td>
                         <td class="status-file-cell" data-id="${conn.id}">
                             ${getStatusFileContent(conn)}
                         </td>
@@ -359,7 +434,7 @@
                     </tr>
                 `).join('');
             } catch (error) {
-                tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--danger-color); padding: 2rem;">Erro ao carregar dados.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--danger-color); padding: 2rem;">Erro ao carregar dados.</td></tr>`;
             }
         }
 
@@ -617,7 +692,8 @@
                             <label>Status</label>
                             <select name="status" class="form-control">
                                 <option value="active" ${conn.status === 'active' ? 'selected' : ''}>Ativo</option>
-                                <option value="inactive" ${conn.status !== 'active' ? 'selected' : ''}>Inativo</option>
+                                <option value="payment_pending" ${conn.status === 'payment_pending' ? 'selected' : ''}>Pendente de pagamento</option>
+                                <option value="inactive" ${conn.status === 'inactive' ? 'selected' : ''}>Inativo</option>
                             </select>
                         </div>
                     </div>
