@@ -1,0 +1,26 @@
+# O node_modules está versionado neste repositório (não há .gitignore).
+# Ignorá-lo aqui é o ponto central da correção: sem isso o COPY traria uma
+# árvore de dependências enorme e possivelmente resolvida para outra
+# plataforma, sobrescrevendo o que o npm ci acabou de instalar no container.
+node_modules
+npm-debug.log*
+yarn-error.log*
+
+.git
+.gitignore
+.vscode
+.idea
+
+Dockerfile
+.dockerignore
+
+*.md
+
+# NOTA: .env NÃO está ignorado de propósito.
+# Ele é a fonte atual das credenciais de banco e o comportamento anterior
+# (buildpack) também o embarcava na imagem. Removê-lo aqui quebraria o deploy
+# caso as variáveis não estejam definidas no painel do Easypanel.
+# O caminho correto é cadastrar DB_HOST/DB_USER/DB_PASS/DB_NAME/DB_PORT/
+# JWT_SECRET como variáveis de ambiente no Easypanel e só então acrescentar
+# a linha ".env" a este arquivo — dotenv não sobrescreve variáveis já
+# definidas no processo, então a migração pode ser feita sem downtime.
