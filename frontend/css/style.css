@@ -332,6 +332,9 @@ img {
     opacity: 0;
     visibility: hidden;
     transition: var(--transition);
+    /* A folga do modal mora aqui, e nao como margem dele: assim o limite de
+       altura do conteudo pode ser 100% desta caixa. */
+    padding: 1rem;
 }
 
 .modal-overlay.show {
@@ -348,7 +351,20 @@ img {
     transform: translateY(-20px);
     transition: var(--transition);
     overflow: hidden;
-    margin: 1rem;
+
+    /* Cabecalho e rodape fixos, corpo rolando entre eles.
+       Sem o teto de altura o modal cresce com o conteudo e o botao de salvar
+       sai da tela - o operador preenche o formulario e nao acha como confirmar. */
+    display: flex;
+    flex-direction: column;
+
+    /* 100% do overlay, e NAO 100vh.
+       vh nao e confiavel: no navegador de celular ele inclui a barra de
+       endereco que some ao rolar, e o rodape do modal fica fora da tela
+       justamente onde esta o botao de salvar. O overlay e position: fixed com
+       height: 100%, entao mede a area util de verdade. */
+    max-height: 100%;
+    margin: 0;
 }
 
 .modal-overlay.show .modal-content {
@@ -361,6 +377,7 @@ img {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-shrink: 0;
 }
 
 .modal-header h3 {
@@ -378,6 +395,11 @@ img {
 
 .modal-body {
     padding: 1.5rem;
+    /* min-height: 0 e obrigatorio aqui: um item flex nao encolhe abaixo do
+       tamanho do proprio conteudo sem isso, e o overflow-y nunca chega a agir. */
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
 }
 
 .modal-footer {
@@ -386,6 +408,7 @@ img {
     display: flex;
     justify-content: flex-end;
     gap: 0.75rem;
+    flex-shrink: 0;
 }
 
 /* Form Elements */

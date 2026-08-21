@@ -459,28 +459,111 @@
             }
         }
 
-        // UI Helpers for Search Select
-        window.toggleSelect = () => {
-            const options = document.getElementById('select-options');
-            if (!options) return;
-            
-            const isShowing = options.classList.contains('show');
-            if (isShowing) {
-                options.classList.remove('show');
+        /* ------------------------------------------------------------------
+           Painel de opcoes fora do modal.
+
+           O dropdown era `position: absolute` dentro do formulario, entao o
+           `overflow` do modal cortava a lista - e cortaria ainda mais agora que
+           o corpo do modal rola.
+
+           Trocar para `position: fixed` NAO resolve: `.modal-content` tem
+           `transform`, e um ancestral transformado passa a ser o bloco que
+           contem os elementos fixos. Eles continuariam presos ali dentro.
+
+           Por isso o painel e MOVIDO para o <body> enquanto esta aberto, com
+           coordenadas calculadas a partir do gatilho, e devolvido ao lugar ao
+           fechar. Voltar e obrigatorio: se o modal for fechado com o painel
+           ainda no body, ele fica orfao na pagina.
+           ------------------------------------------------------------------ */
+        const selectAberto = { painel: null, origem: null, gatilho: null, aoRolar: null, aoClicar: null };
+
+        function posicionarPainel() {
+            const { painel, gatilho } = selectAberto;
+            if (!painel || !gatilho) return;
+
+            const r = gatilho.getBoundingClientRect();
+            const folga = 8;
+            const abaixo = window.innerHeight - r.bottom - folga;
+            const acima = r.top - folga;
+            // Abre para cima quando embaixo nao cabe - o caso do select de plano,
+            // que fica na metade de baixo do formulario.
+            const paraCima = abaixo < 200 && acima > abaixo;
+            const altura = Math.min(280, Math.max(160, paraCima ? acima : abaixo));
+
+            painel.style.position = 'fixed';
+            painel.style.left = r.left + 'px';
+            // O CSS do painel traz right: 0 para o modo ancorado. Com left e
+            // width definidos ele seria ignorado, mas zerar deixa explicito.
+            painel.style.right = 'auto';
+            painel.style.width = r.width + 'px';
+            painel.style.maxHeight = altura + 'px';
+            painel.style.margin = '0';
+            // Acima do overlay do modal, que esta em 1000.
+            painel.style.zIndex = '1100';
+
+            if (paraCima) {
+                painel.style.top = 'auto';
+                painel.style.bottom = (window.innerHeight - r.top + 4) + 'px';
             } else {
-                options.classList.add('show');
-                const input = options.querySelector('.search-select-input');
-                if (input) setTimeout(() => input.focus(), 50);
-                
-                const closeHandler = (e) => {
-                    if (!e.target.closest('.search-select-container')) {
-                        options.classList.remove('show');
-                        document.removeEventListener('click', closeHandler);
-                    }
-                };
-                setTimeout(() => document.addEventListener('click', closeHandler), 0);
+                painel.style.bottom = 'auto';
+                painel.style.top = (r.bottom + 4) + 'px';
             }
+        }
+
+        window.fecharSelect = () => {
+            const s = selectAberto;
+            if (!s.painel) return;
+
+            s.painel.classList.remove('show');
+            s.painel.removeAttribute('style');
+            s.origem.appendChild(s.painel);
+
+            window.removeEventListener('resize', s.aoRolar);
+            // captura: o corpo do modal rola sem borbulhar para a window.
+            window.removeEventListener('scroll', s.aoRolar, true);
+            document.removeEventListener('click', s.aoClicar, true);
+
+            s.painel = null; s.origem = null; s.gatilho = null;
         };
+
+        function abrirSelect(idPainel, idContainer) {
+            const painel = document.getElementById(idPainel);
+            const container = document.getElementById(idContainer);
+            if (!painel || !container) return;
+
+            // Segundo clique no mesmo gatilho fecha.
+            const jaAberto = selectAberto.painel === painel;
+            window.fecharSelect();
+            if (jaAberto) return;
+
+            selectAberto.painel = painel;
+            selectAberto.origem = painel.parentElement;
+            selectAberto.gatilho = container.querySelector('.search-select-trigger');
+
+            document.body.appendChild(painel);
+            painel.classList.add('show');
+            posicionarPainel();
+
+            selectAberto.aoRolar = () => posicionarPainel();
+            window.addEventListener('resize', selectAberto.aoRolar);
+            window.addEventListener('scroll', selectAberto.aoRolar, true);
+
+            // Fase de captura: o painel volta para dentro do modal ANTES de
+            // qualquer outro handler rodar. E o que impede que fechar o modal
+            // pelo X deixe o painel solto no body.
+            selectAberto.aoClicar = (e) => {
+                if (e.target.closest('#' + idPainel)) return;
+                if (e.target.closest('#' + idContainer)) return;
+                window.fecharSelect();
+            };
+            setTimeout(() => document.addEventListener('click', selectAberto.aoClicar, true), 0);
+
+            const busca = painel.querySelector('.search-select-input');
+            if (busca) setTimeout(() => busca.focus(), 50);
+        }
+
+        // UI Helpers for Search Select
+        window.toggleSelect = () => abrirSelect('select-options', 'client-select');
 
         window.renderClientOptions = (filter = '', selectedId = null) => {
             const clients = cachedClients || [];
@@ -517,31 +600,13 @@
             
             if (input) input.value = id;
             if (label) label.textContent = name;
-            if (options) options.classList.remove('show');
+            // fecharSelect e nao classList.remove: o painel esta no <body> agora
+            // e precisa voltar para dentro do formulario.
+            if (options) window.fecharSelect();
         };
 
         // UI Helpers for Plan Select
-        window.togglePlanSelect = () => {
-            const options = document.getElementById('plan-select-options');
-            if (!options) return;
-            
-            const isShowing = options.classList.contains('show');
-            if (isShowing) {
-                options.classList.remove('show');
-            } else {
-                options.classList.add('show');
-                const input = options.querySelector('.search-select-input');
-                if (input) setTimeout(() => input.focus(), 50);
-                
-                const closeHandler = (e) => {
-                    if (!e.target.closest('#plan-select')) {
-                        options.classList.remove('show');
-                        document.removeEventListener('click', closeHandler);
-                    }
-                };
-                setTimeout(() => document.addEventListener('click', closeHandler), 0);
-            }
-        };
+        window.togglePlanSelect = () => abrirSelect('plan-select-options', 'plan-select');
 
         window.renderPlanOptions = (filter = '', selectedId = null) => {
             const plans = cachedPlans || [];
@@ -576,7 +641,7 @@
             
             if (input) input.value = id;
             if (label) label.textContent = name;
-            if (options) options.classList.remove('show');
+            if (options) window.fecharSelect();
         };
 
         // Actions
