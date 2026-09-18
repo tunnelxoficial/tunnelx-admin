@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Estoque - TunnelX Admin</title>
 
-    <meta name="theme-color" content="#2563EB">
+    <meta name="theme-color" content="#1356C1">
 
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -116,20 +116,20 @@
                             </span>
                         </td>
                         <td>R$ ${item.Product ? parseFloat(item.Product.valor).toFixed(2).replace('.', ',') : '0,00'}</td>
-                        <td style="text-align: right;">
+                        <td class="td-actions"><div class="actions">
                             <button class="btn btn-sm btn-success" onclick="openMovementModal(${item.id}, 'ENTRY')" title="Entrada">
                                 <i class="fa-solid fa-plus"></i>
                             </button>
-                            <button class="btn btn-sm btn-danger" onclick="openMovementModal(${item.id}, 'EXIT')" title="Saída">
+                            <button class="btn btn-sm btn-danger btn-icon" onclick="openMovementModal(${item.id}, 'EXIT')" title="Saída">
                                 <i class="fa-solid fa-minus"></i>
                             </button>
                             <button class="btn btn-sm btn-info" onclick="openHistoryModal(${item.id})" title="Histórico" style="color: white;">
                                 <i class="fa-solid fa-list"></i>
                             </button>
-                            <button class="btn btn-sm btn-secondary" onclick="deleteStock(${item.id})" title="Excluir Registro">
+                            <button class="btn btn-sm btn-secondary btn-icon" onclick="deleteStock(${item.id})" title="Excluir Registro">
                                 <i class="fa-solid fa-trash"></i>
                             </button>
-                        </td>
+                        </div></td>
                     </tr>
                 `).join('');
             } catch (error) {
@@ -176,7 +176,7 @@
                         await Stocks.create(payload);
                         refreshTable();
                     } catch (error) {
-                        alert('Erro ao salvar: ' + error.message);
+                        Toast.show('Erro ao salvar: ' + error.message);
                     }
                 }
             });
@@ -217,7 +217,7 @@
                         await Stocks.registerMovement(id, type, quantity, reason);
                         refreshTable();
                     } catch (error) {
-                        alert('Erro ao registrar movimentação: ' + (error.message || 'Erro desconhecido'));
+                        Toast.show('Erro ao registrar movimentação: ' + (error.message || 'Erro desconhecido'));
                     }
                 }
             });
@@ -275,7 +275,7 @@
                 });
 
             } catch (error) {
-                alert('Erro ao carregar histórico: ' + error.message);
+                Toast.show('Erro ao carregar histórico: ' + error.message);
             }
         };
 
@@ -290,7 +290,7 @@
                         await Stocks.delete(id);
                         refreshTable();
                     } catch (error) {
-                        alert('Erro ao excluir: ' + error.message);
+                        Toast.show('Erro ao excluir: ' + error.message);
                     }
                 }
             });

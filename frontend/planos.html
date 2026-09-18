@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Planos - TunnelX Admin</title>
 
-    <meta name="theme-color" content="#2563EB">
+    <meta name="theme-color" content="#1356C1">
 
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -109,14 +109,14 @@
                                 <i class="fa-solid fa-box"></i> ${productCount}
                             </span>
                         </td>
-                        <td style="text-align: right;">
-                            <button class="btn btn-sm btn-secondary" onclick="openModal(${item.id})" title="Editar">
+                        <td class="td-actions"><div class="actions">
+                            <button class="btn btn-sm btn-secondary btn-icon" onclick="openModal(${item.id})" title="Editar">
                                 <i class="fa-solid fa-edit"></i>
                             </button>
-                            <button class="btn btn-sm btn-danger" onclick="deletePlan(${item.id})" title="Excluir">
+                            <button class="btn btn-sm btn-danger btn-icon" onclick="deletePlan(${item.id})" title="Excluir">
                                 <i class="fa-solid fa-trash"></i>
                             </button>
-                        </td>
+                        </div></td>
                     </tr>
                 `}).join('');
             } catch (error) {
@@ -163,7 +163,7 @@
                         }
                     }
                 } catch (e) {
-                    alert('Erro ao carregar dados para edição');
+                    Toast.show('Erro ao carregar dados para edição');
                     return;
                 }
             }
@@ -278,7 +278,7 @@
                         }
                         refreshTable();
                     } catch (error) {
-                        alert('Erro ao salvar: ' + error.message);
+                        Toast.show('Erro ao salvar: ' + error.message);
                     }
                 }
             });
@@ -295,7 +295,7 @@
                         await Plans.delete(id);
                         refreshTable();
                     } catch (error) {
-                        alert('Erro ao excluir: ' + error.message);
+                        Toast.show('Erro ao excluir: ' + error.message);
                     }
                 }
             });

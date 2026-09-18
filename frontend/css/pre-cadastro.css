@@ -1,7 +1,12 @@
+/* Este arquivo carrega DEPOIS de style.css, entao tudo que ele redefinir aqui
+   vence. As cores da marca ficaram de fora de proposito: --primary-color e
+   --primary-dark vem do design system, senao esta pagina - a unica que o
+   cliente final ve - seria a unica fora da identidade.
+
+   Os neutros abaixo continuam locais porque o checkout tem fundo e cartao
+   proprios, diferentes do painel. */
 :root {
-    --primary-color: #2563EB;
-    --primary-dark: #1d4ed8;
-    --secondary-color: #10B981;
+    --secondary-color: var(--secondary-dark);
     --text-color: #1e293b;
     --text-light: #64748b;
     --bg-color: #f1f5f9;

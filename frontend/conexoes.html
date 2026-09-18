@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Conexões - TunnelX Admin</title>
 
-    <meta name="theme-color" content="#2563EB">
+    <meta name="theme-color" content="#1356C1">
 
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -226,7 +226,7 @@
                 <button class="btn btn-sm btn-outline-secondary" onclick="copyConfig(${conn.id}, this)" title="Copiar configuração">
                     <i class="fa-regular fa-copy"></i>
                 </button>
-                <button class="btn btn-sm btn-secondary" onclick="reprovisionConnection(${conn.id})" title="Regerar config e QR com o endpoint atual">
+                <button class="btn btn-sm btn-secondary btn-icon" onclick="reprovisionConnection(${conn.id})" title="Regerar config e QR com o endpoint atual">
                     <i class="fa-solid fa-rotate"></i>
                 </button>`;
 
@@ -258,7 +258,7 @@
 
             return `<div style="display: flex; gap: 0.5rem; align-items: center;">
                 <span class="badge badge-danger">Não provisionado</span>
-                <button class="btn btn-sm btn-secondary" onclick="reprovisionConnection(${conn.id})" title="Enviar para a fila">
+                <button class="btn btn-sm btn-secondary btn-icon" onclick="reprovisionConnection(${conn.id})" title="Enviar para a fila">
                     <i class="fa-solid fa-play"></i>
                 </button>
             </div>`;
@@ -275,7 +275,7 @@
                         await Connections.reprovision(id);
                         refreshTable();
                     } catch (e) {
-                        alert('Erro ao reenfileirar: ' + e.message);
+                        Toast.show('Erro ao reenfileirar: ' + e.message);
                     }
                 }
             });
@@ -288,7 +288,7 @@
             try {
                 return await Connections.getFiles(id);
             } catch (e) {
-                alert('Erro ao obter os dados da conexão: ' + e.message);
+                Toast.show('Erro ao obter os dados da conexão: ' + e.message);
                 return null;
             }
         }
@@ -296,7 +296,7 @@
         window.showQRCode = async (id) => {
             const data = await loadConnectionFiles(id);
             if (!data || !data.qrcode_base64) {
-                alert('QR Code ainda não disponível. A conexão pode não ter sido provisionada.');
+                Toast.show('QR Code ainda não disponível. A conexão pode não ter sido provisionada.');
                 return;
             }
 
@@ -317,7 +317,7 @@
         window.downloadConfig = async (id) => {
             const data = await loadConnectionFiles(id);
             if (!data || !data.config) {
-                alert('Configuração ainda não disponível. A conexão pode não ter sido provisionada.');
+                Toast.show('Configuração ainda não disponível. A conexão pode não ter sido provisionada.');
                 return;
             }
 
@@ -339,7 +339,7 @@
         window.copyConfig = async (id, btn) => {
             const data = await loadConnectionFiles(id);
             if (!data || !data.config) {
-                alert('Configuração ainda não disponível. A conexão pode não ter sido provisionada.');
+                Toast.show('Configuração ainda não disponível. A conexão pode não ter sido provisionada.');
                 return;
             }
 
@@ -420,17 +420,17 @@
                                style="color: ${conn.internet ? 'var(--secondary-color)' : 'var(--danger-color)'}; margin-left: 0.5rem;"
                                title="${conn.internet ? 'Internet Ativa' : 'Internet Bloqueada'}"></i>
                         </td>
-                        <td style="text-align: right;">
+                        <td class="td-actions"><div class="actions">
                             <button class="btn btn-sm btn-secondary" onclick="toggleInternet(${conn.id})" title="${conn.internet ? 'Bloquear Internet' : 'Desbloquear Internet'}">
                                 <i class="fa-solid ${conn.internet ? 'fa-lock' : 'fa-lock-open'}"></i>
                             </button>
-                            <button class="btn btn-sm btn-secondary" onclick="openModal(${conn.id})" title="Editar">
+                            <button class="btn btn-sm btn-secondary btn-icon" onclick="openModal(${conn.id})" title="Editar">
                                 <i class="fa-solid fa-pen"></i>
                             </button>
-                            <button class="btn btn-sm btn-danger" onclick="deleteConnection(${conn.id})" title="Excluir">
+                            <button class="btn btn-sm btn-danger btn-icon" onclick="deleteConnection(${conn.id})" title="Excluir">
                                 <i class="fa-solid fa-trash"></i>
                             </button>
-                        </td>
+                        </div></td>
                     </tr>
                 `).join('');
             } catch (error) {
@@ -789,12 +789,12 @@
                     const planId = form.querySelector('[name="planId"]').value;
                     
                     if (!clientId) {
-                        alert('Por favor, selecione um cliente.');
+                        Toast.show('Por favor, selecione um cliente.');
                         throw new Error('Cliente obrigatório');
                     }
 
                     if (!planId) {
-                         alert('Por favor, selecione um plano.');
+                         Toast.show('Por favor, selecione um plano.');
                          throw new Error('Plano obrigatório');
                     }
 
@@ -812,7 +812,7 @@
                         }
                         refreshTable();
                     } catch (error) {
-                        alert('Erro ao salvar: ' + error.message);
+                        Toast.show('Erro ao salvar: ' + error.message);
                         throw error;
                     }
                 }
@@ -830,7 +830,7 @@
                         await Connections.delete(id);
                         refreshTable();
                     } catch (error) {
-                        alert('Erro ao excluir: ' + error.message);
+                        Toast.show('Erro ao excluir: ' + error.message);
                     }
                 }
             });
@@ -851,7 +851,7 @@
                         await Connections.toggleInternet(id);
                         refreshTable();
                     } catch (error) {
-                        alert('Erro ao alterar internet: ' + error.message);
+                        Toast.show('Erro ao alterar internet: ' + error.message);
                     }
                 }
             });

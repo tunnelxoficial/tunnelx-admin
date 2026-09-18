@@ -266,7 +266,7 @@ function validateStep(step) {
     
     if (step === 3 && !formData.planId) {
         isValid = false;
-        alert('Por favor, selecione um plano.');
+        Toast.show('Por favor, selecione um plano.');
     }
     
     return isValid;
@@ -415,7 +415,7 @@ async function submitForm() {
         
     } catch (error) {
         console.error('Erro no checkout:', error);
-        alert('Erro ao processar seu pagamento: ' + (error.message || 'Verifique os dados do cartão e tente novamente.'));
+        Toast.show('Erro ao processar seu pagamento: ' + (error.message || 'Verifique os dados do cartão e tente novamente.'));
         nextBtn.disabled = false;
         nextBtn.textContent = 'Finalizar Pagamento';
     }

@@ -5,19 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - TunnelX Admin</title>
 
-    <meta name="theme-color" content="#2563EB">
+    <meta name="theme-color" content="#1356C1">
 
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
+
     <!-- Custom CSS -->
     <link rel="stylesheet" href="css/style.css">
-    
+
     <!-- Favicon -->
     <link rel="shortcut icon" href="img/favicon.jpg" type="image/x-icon">
 </head>
@@ -26,23 +26,39 @@
         <div class="login-card">
             <div class="login-header">
                 <div class="login-logo">
-                    <img src="img/logo.png" alt="TunnelX Logo" style="height: 60px; margin: 0 auto;">
+                    <img src="img/logo.png" alt="TunnelX" style="height: 56px; margin: 0 auto;">
                 </div>
                 <h2>Bem-vindo de volta</h2>
-                <p style="color: var(--text-light)">Faça login para acessar o painel</p>
+                <p style="color: var(--text-light); font-size: .875rem;">Faça login para acessar o painel</p>
             </div>
-            <form id="login-form">
+
+            <form id="login-form" novalidate>
                 <div class="form-group">
                     <label for="email">Email</label>
-                    <input type="email" id="email" class="form-control" placeholder="admin@tunnelx.com" required>
+                    <span class="input-icon">
+                        <i class="fa-solid fa-envelope"></i>
+                        <input type="email" id="email" class="form-control" placeholder="admin@tunnelx.com"
+                               autocomplete="username" required>
+                    </span>
                 </div>
+
                 <div class="form-group">
                     <label for="password">Senha</label>
-                    <input type="password" id="password" class="form-control" placeholder="••••••••" required>
+                    <span class="input-icon">
+                        <i class="fa-solid fa-lock"></i>
+                        <input type="password" id="password" class="form-control" placeholder="••••••••"
+                               autocomplete="current-password" required>
+                    </span>
                 </div>
-                <button type="submit" class="btn btn-primary" style="width: 100%">Entrar</button>
+
+                <!-- O erro aparece junto ao formulario, e nao num modal por cima
+                     dele: a correcao acontece nos campos, que o modal tapava. -->
+                <div id="login-error" class="form-error" style="display: none; margin-bottom: 1rem;"></div>
+
+                <button type="submit" class="btn btn-primary btn-lg btn-block">Entrar</button>
             </form>
-             <div style="margin-top: 1.5rem; text-align: center; font-size: 0.875rem; display: none;">
+
+            <div style="margin-top: 1.5rem; text-align: center; font-size: 0.875rem; display: none;">
                 <p style="color: var(--text-light)">Não tem uma conta? <a href="register.html" style="color: var(--primary-color); font-weight: 600;">Registre-se</a></p>
             </div>
         </div>
@@ -54,33 +70,57 @@
     <script src="js/api.js"></script>
     <script src="js/main.js"></script>
     <script>
+        const erroBox = document.getElementById('login-error');
+        const campoEmail = document.getElementById('email');
+        const campoSenha = document.getElementById('password');
+
+        const mostrarErro = (msg) => {
+            erroBox.textContent = msg;
+            erroBox.style.display = 'block';
+        };
+
         document.getElementById('login-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
-            const email = document.getElementById('email').value;
-            const password = document.getElementById('password').value;
-            const btn = e.target.querySelector('button');
-            
+
+            const email = campoEmail.value.trim();
+            const password = campoSenha.value;
+            const btn = e.target.querySelector('button[type=submit]');
+
+            erroBox.style.display = 'none';
+
+            if (!email || !password) {
+                mostrarErro('Informe email e senha.');
+                (!email ? campoEmail : campoSenha).focus();
+                return;
+            }
+
             try {
-                btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Entrando...';
-                btn.disabled = true;
+                // is-loading troca o rotulo por um anel girando e bloqueia o
+                // clique: sem isso o duplo envio dispara dois logins.
+                btn.classList.add('is-loading');
 
                 await Auth.login(email, password);
                 window.location.href = 'index.html';
 
             } catch (error) {
-                Modal.show({
-                    title: 'Erro de Login',
-                    content: error.message,
-                    type: 'danger',
-                    confirmText: 'Tentar novamente'
-                });
+                mostrarErro(error.message || 'Não foi possível entrar.');
+                campoSenha.classList.add('is-invalid');
+                campoSenha.focus();
+                campoSenha.select();
             } finally {
-                btn.innerHTML = 'Entrar';
-                btn.disabled = false;
+                btn.classList.remove('is-loading');
             }
         });
-        
+
+        // Digitar de novo limpa o erro: manter a borda vermelha enquanto a
+        // pessoa corrige faz o campo parecer permanentemente invalido.
+        [campoEmail, campoSenha].forEach((el) => {
+            el.addEventListener('input', () => {
+                el.classList.remove('is-invalid');
+                erroBox.style.display = 'none';
+            });
+        });
+
         // Check if already logged in
         if (Auth.isAuthenticated()) {
             window.location.href = 'index.html';

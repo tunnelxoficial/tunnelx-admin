@@ -5,19 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Início - TunnelX Admin</title>
 
-    <meta name="theme-color" content="#2563EB">
+    <meta name="theme-color" content="#1356C1">
 
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
+
     <!-- Custom CSS -->
     <link rel="stylesheet" href="css/style.css">
-    
+
     <!-- Favicon -->
     <link rel="shortcut icon" href="img/favicon.jpg" type="image/x-icon">
 </head>
@@ -36,7 +36,19 @@
             } catch (error) {
                 console.error('Error loading dashboard:', error);
                 const content = document.getElementById('page-content');
-                if (content) content.innerHTML = '<p class="text-center text-danger">Erro ao carregar dados.</p>';
+                if (content) {
+                    content.innerHTML = `
+                        <div class="card card-pad">
+                            <div class="empty">
+                                <i class="fa-solid fa-plug-circle-xmark"></i>
+                                <h4>Não foi possível carregar o painel</h4>
+                                <p>Verifique se a API está no ar e tente de novo.</p>
+                                <button class="btn btn-secondary" style="margin-top:1rem" onclick="loadDashboard()">
+                                    <i class="fa-solid fa-rotate-right"></i> Tentar de novo
+                                </button>
+                            </div>
+                        </div>`;
+                }
             }
         }
 
@@ -56,143 +68,163 @@
             `;
 
             content.innerHTML = `
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
-                    ${skeletonCard.repeat(4)}
-                </div>
-
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+                <div class="grid-stats">${skeletonCard.repeat(4)}</div>
+                <div class="grid-2">
                     <div class="skeleton-card" style="height: 300px;">
                         <div class="skeleton skeleton-text" style="width: 150px; height: 1.5rem; margin-bottom: 1.5rem;"></div>
                         <div class="skeleton skeleton-text" style="width: 100%; height: 2rem; margin-bottom: 1rem;"></div>
                         <div class="skeleton skeleton-text" style="width: 100%; height: 2rem; margin-bottom: 1rem;"></div>
-                        <div class="skeleton skeleton-text" style="width: 100%; height: 2rem; margin-bottom: 1rem;"></div>
+                        <div class="skeleton skeleton-text" style="width: 100%; height: 2rem;"></div>
                     </div>
                     <div class="skeleton-card" style="height: 300px;">
-                         <div class="skeleton skeleton-text" style="width: 150px; height: 1.5rem; margin-bottom: 1.5rem;"></div>
-                         <div style="display: grid; gap: 1rem;">
+                        <div class="skeleton skeleton-text" style="width: 150px; height: 1.5rem; margin-bottom: 1.5rem;"></div>
+                        <div style="display: grid; gap: 1rem;">
                             <div class="skeleton skeleton-text" style="width: 100%; height: 3rem;"></div>
                             <div class="skeleton skeleton-text" style="width: 100%; height: 3rem;"></div>
                             <div class="skeleton skeleton-text" style="width: 100%; height: 3rem;"></div>
-                         </div>
+                        </div>
                     </div>
                 </div>
             `;
+        }
+
+        /**
+         * Contagem que sobe até o valor.
+         *
+         * Dá ao painel a sensação de que os dados acabaram de chegar, em vez de
+         * já estarem ali. Duração curta de propósito: quem abre o painel quer o
+         * número, não a animação.
+         */
+        function animarNumero(el, valor, formatar) {
+            const inicio = performance.now();
+            const dur = 700;
+            const passo = (t) => {
+                const p = Math.min(1, (t - inicio) / dur);
+                // easeOutCubic: rápido no início, freia no fim.
+                const e = 1 - Math.pow(1 - p, 3);
+                el.textContent = formatar(valor * e);
+                if (p < 1) requestAnimationFrame(passo);
+                else el.textContent = formatar(valor);
+            };
+            requestAnimationFrame(passo);
         }
 
         function renderDashboard(stats) {
             const content = document.getElementById('page-content');
             if (!content) return;
 
-            const formatCurrency = (value) => {
-                return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-            };
+            const moeda = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+            const inteiro = (v) => Math.round(v).toString();
+
+            const semEstoqueBaixo = stats.stock.lowStockList.length === 0;
 
             content.innerHTML = `
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
-                    
-                    <!-- Clientes -->
-                    <div class="card" style="background: white; padding: 1.5rem; border-radius: 0.75rem; box-shadow: var(--shadow-sm); border: 1px solid var(--border-color);">
-                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
-                            <h3 style="font-size: 0.875rem; color: var(--text-light); font-weight: 500;">Clientes Totais</h3>
-                            <div style="width: 40px; height: 40px; background: #EFF6FF; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--primary-color);">
-                                <i class="fa-solid fa-users"></i>
-                            </div>
+                <div class="grid-stats">
+                    <div class="stat">
+                        <div class="stat-top">
+                            <span class="stat-label">Clientes totais</span>
+                            <span class="stat-icon"><i class="fa-solid fa-users"></i></span>
                         </div>
-                        <p style="font-size: 1.5rem; font-weight: 700; color: var(--text-color);">${stats.clients.total}</p>
+                        <p class="stat-value" data-valor="${stats.clients.total}" data-fmt="int">0</p>
                     </div>
 
-                    <!-- Conexões Ativas -->
-                    <div class="card" style="background: white; padding: 1.5rem; border-radius: 0.75rem; box-shadow: var(--shadow-sm); border: 1px solid var(--border-color);">
-                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
-                            <h3 style="font-size: 0.875rem; color: var(--text-light); font-weight: 500;">Conexões Ativas</h3>
-                            <div style="width: 40px; height: 40px; background: #DCFCE7; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--success-color);">
-                                <i class="fa-solid fa-network-wired"></i>
-                            </div>
+                    <div class="stat is-green">
+                        <div class="stat-top">
+                            <span class="stat-label">Conexões ativas</span>
+                            <span class="stat-icon is-green"><i class="fa-solid fa-network-wired"></i></span>
                         </div>
-                        <p style="font-size: 1.5rem; font-weight: 700; color: var(--text-color);">${stats.connections.active}</p>
-                        <span style="font-size: 0.75rem; color: var(--text-light);">
-                            de ${stats.connections.total} registradas
-                        </span>
+                        <p class="stat-value" data-valor="${stats.connections.active}" data-fmt="int">0</p>
+                        <span class="stat-hint">de ${stats.connections.total} registradas</span>
                     </div>
 
-                    <!-- Valor em Estoque -->
-                    <div class="card" style="background: white; padding: 1.5rem; border-radius: 0.75rem; box-shadow: var(--shadow-sm); border: 1px solid var(--border-color);">
-                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
-                            <h3 style="font-size: 0.875rem; color: var(--text-light); font-weight: 500;">Valor em Estoque</h3>
-                            <div style="width: 40px; height: 40px; background: #FFF7ED; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #EA580C;">
-                                <i class="fa-solid fa-coins"></i>
-                            </div>
+                    <div class="stat is-amber">
+                        <div class="stat-top">
+                            <span class="stat-label">Valor em estoque</span>
+                            <span class="stat-icon is-amber"><i class="fa-solid fa-coins"></i></span>
                         </div>
-                        <p style="font-size: 1.5rem; font-weight: 700; color: var(--text-color);">${formatCurrency(stats.stock.totalValue)}</p>
+                        <p class="stat-value" data-valor="${stats.stock.totalValue}" data-fmt="moeda">—</p>
                     </div>
 
-                    <!-- Planos -->
-                    <div class="card" style="background: white; padding: 1.5rem; border-radius: 0.75rem; box-shadow: var(--shadow-sm); border: 1px solid var(--border-color);">
-                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
-                            <h3 style="font-size: 0.875rem; color: var(--text-light); font-weight: 500;">Planos Disponíveis</h3>
-                            <div style="width: 40px; height: 40px; background: #F3E8FF; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #9333EA;">
-                                <i class="fa-solid fa-clipboard-list"></i>
-                            </div>
+                    <div class="stat is-violet">
+                        <div class="stat-top">
+                            <span class="stat-label">Planos disponíveis</span>
+                            <span class="stat-icon is-violet"><i class="fa-solid fa-clipboard-list"></i></span>
                         </div>
-                        <p style="font-size: 1.5rem; font-weight: 700; color: var(--text-color);">${stats.plans.total}</p>
+                        <p class="stat-value" data-valor="${stats.plans.total}" data-fmt="int">0</p>
+                        <span class="stat-hint">${stats.products.total} produto(s) cadastrado(s)</span>
                     </div>
                 </div>
 
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
-                    <!-- Alerta de Estoque -->
-                    <div style="background: white; border-radius: 0.75rem; border: 1px solid var(--border-color); padding: 1.5rem;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                            <h3 style="font-size: 1.125rem;">Estoque Baixo</h3>
-                            ${stats.stock.lowStockCount > 0 ? `<span class="badge badge-danger">${stats.stock.lowStockCount} itens</span>` : ''}
+                <div class="grid-2">
+                    <div class="card card-pad">
+                        <div class="card-head">
+                            <h3 class="card-title">Estoque baixo</h3>
+                            ${stats.stock.lowStockCount > 0
+                                ? `<span class="badge badge-danger"><span class="dot"></span>${stats.stock.lowStockCount} item(ns)</span>`
+                                : '<span class="badge badge-success">tudo certo</span>'}
                         </div>
-                        
-                        ${stats.stock.lowStockList.length > 0 ? `
-                            <div style="overflow-x: auto;">
-                                <table style="width: 100%; border-collapse: collapse;">
+
+                        ${semEstoqueBaixo ? `
+                            <div class="empty" style="padding:2rem 1rem;">
+                                <i class="fa-solid fa-boxes-stacked"></i>
+                                <h4>Nenhum item em falta</h4>
+                                <p>Todos os produtos estão acima do mínimo de 10 unidades.</p>
+                            </div>
+                        ` : `
+                            <div class="table-responsive">
+                                <table>
                                     <thead>
-                                        <tr style="border-bottom: 1px solid var(--border-color);">
-                                            <th style="text-align: left; padding: 0.75rem 0; font-size: 0.875rem; color: var(--text-light);">Produto</th>
-                                            <th style="text-align: right; padding: 0.75rem 0; font-size: 0.875rem; color: var(--text-light);">Qtd.</th>
+                                        <tr>
+                                            <th>Produto</th>
+                                            <th style="text-align:right;">Qtd.</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         ${stats.stock.lowStockList.map(item => `
-                                            <tr style="border-bottom: 1px solid var(--border-color);">
-                                                <td style="padding: 0.75rem 0; font-size: 0.875rem; font-weight: 500;">${item.product}</td>
-                                                <td style="text-align: right; padding: 0.75rem 0; font-size: 0.875rem; color: var(--danger-color); font-weight: 700;">${item.quantity}</td>
+                                            <tr>
+                                                <td class="cell-title">${item.product}</td>
+                                                <td style="text-align:right;">
+                                                    <span class="badge badge-danger">${item.quantity}</span>
+                                                </td>
                                             </tr>
                                         `).join('')}
                                     </tbody>
                                 </table>
                             </div>
-                            <div style="margin-top: 1rem; text-align: center;">
-                                <a href="estoque.html" style="font-size: 0.875rem; color: var(--primary-color); text-decoration: none; font-weight: 500;">Ver Estoque Completo &rarr;</a>
+                            <div style="margin-top:1rem; text-align:center;">
+                                <a href="estoque.html" class="btn btn-ghost btn-sm">
+                                    Ver estoque completo <i class="fa-solid fa-arrow-right"></i>
+                                </a>
                             </div>
-                        ` : `
-                            <p style="color: var(--text-light); text-align: center; padding: 2rem;">Nenhum item com estoque baixo.</p>
                         `}
                     </div>
 
-                    <!-- Ações Rápidas -->
-                    <div style="background: white; border-radius: 0.75rem; border: 1px solid var(--border-color); padding: 1.5rem;">
-                        <h3 style="margin-bottom: 1rem; font-size: 1.125rem;">Ações Rápidas</h3>
-                        <div style="display: grid; gap: 0.75rem;">
-                            <a href="clientes.html" class="btn btn-secondary" style="justify-content: start; text-align: left;">
-                                <i class="fa-solid fa-user-plus" style="margin-right: 0.5rem;"></i> Novo Cliente
+                    <div class="card card-pad">
+                        <div class="card-head">
+                            <h3 class="card-title">Ações rápidas</h3>
+                        </div>
+                        <div style="display:grid; gap:.6rem;">
+                            <a href="clientes.html" class="btn btn-secondary" style="justify-content:flex-start;">
+                                <i class="fa-solid fa-user-plus"></i> Novo cliente
                             </a>
-                            <a href="conexoes.html" class="btn btn-secondary" style="justify-content: start; text-align: left;">
-                                <i class="fa-solid fa-plus-circle" style="margin-right: 0.5rem;"></i> Nova Conexão
+                            <a href="conexoes.html" class="btn btn-secondary" style="justify-content:flex-start;">
+                                <i class="fa-solid fa-circle-plus"></i> Nova conexão
                             </a>
-                            <a href="estoque.html" class="btn btn-secondary" style="justify-content: start; text-align: left;">
-                                <i class="fa-solid fa-box-open" style="margin-right: 0.5rem;"></i> Gerenciar Estoque
+                            <a href="estoque.html" class="btn btn-secondary" style="justify-content:flex-start;">
+                                <i class="fa-solid fa-box-open"></i> Gerenciar estoque
                             </a>
-                             <a href="planos.html" class="btn btn-secondary" style="justify-content: start; text-align: left;">
-                                <i class="fa-solid fa-clipboard-list" style="margin-right: 0.5rem;"></i> Gerenciar Planos
+                            <a href="planos.html" class="btn btn-secondary" style="justify-content:flex-start;">
+                                <i class="fa-solid fa-clipboard-list"></i> Gerenciar planos
                             </a>
                         </div>
                     </div>
                 </div>
             `;
+
+            content.querySelectorAll('.stat-value[data-valor]').forEach(el => {
+                const v = Number(el.dataset.valor) || 0;
+                animarNumero(el, v, el.dataset.fmt === 'moeda' ? moeda : inteiro);
+            });
         }
 
         // Render Page

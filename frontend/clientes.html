@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Clientes - TunnelX Admin</title>
 
-    <meta name="theme-color" content="#2563EB">
+    <meta name="theme-color" content="#1356C1">
 
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -98,24 +98,24 @@
                 tbody.innerHTML = clients.map(client => `
                     <tr>
                         <td>
-                            <div style="font-weight: 500;">${client.name}</div>
+                            <div class="cell-title">${client.name}</div>
                         </td>
-                        <td>${client.cpf || '-'}</td>
+                        <td class="nowrap mono">${client.cpf || '-'}</td>
                         <td>${client.email}</td>
-                        <td>${client.whatsapp}</td>
+                        <td class="nowrap">${client.whatsapp}</td>
                         <td>${client.cidade || '-'} / ${client.uf || '-'}</td>
                         <td>${accessBadge(client)}</td>
-                        <td style="text-align: right;">
-                            <button class="btn btn-sm btn-secondary" onclick="managePassword(${client.id})" title="${client.has_app_access ? 'Gerar nova senha do app' : 'Liberar acesso ao app'}">
+                        <td class="td-actions"><div class="actions">
+                            <button class="btn btn-sm btn-secondary btn-icon" onclick="managePassword(${client.id})" title="${client.has_app_access ? 'Gerar nova senha do app' : 'Liberar acesso ao app'}">
                                 <i class="fa-solid fa-key"></i>
                             </button>
-                            <button class="btn btn-sm btn-secondary" onclick="openModal(${client.id})" title="Editar">
+                            <button class="btn btn-sm btn-secondary btn-icon" onclick="openModal(${client.id})" title="Editar">
                                 <i class="fa-solid fa-pen"></i>
                             </button>
-                            <button class="btn btn-sm btn-danger" onclick="deleteClient(${client.id})" title="Excluir">
+                            <button class="btn btn-sm btn-danger btn-icon" onclick="deleteClient(${client.id})" title="Excluir">
                                 <i class="fa-solid fa-trash"></i>
                             </button>
-                        </td>
+                        </div></td>
                     </tr>
                 `).join('');
             } catch (error) {
@@ -155,7 +155,7 @@
                         </div>
                         <div class="form-group">
                             <label>CPF</label>
-                            <input type="text" name="cpf" class="form-control" value="${client.cpf || ''}" placeholder="000.000.000-00" oninput="this.value = Masks.cpf(this.value)">
+                            <input type="text" name="cpf" class="form-control" value="${client.cpf || ''}" placeholder="000.000.000-00" data-mask="cpf">
                         </div>
                     </div>
                     
@@ -166,14 +166,14 @@
                         </div>
                         <div class="form-group">
                             <label>WhatsApp</label>
-                            <input type="text" name="whatsapp" class="form-control" value="${client.whatsapp}" required placeholder="(00) 00000-0000" oninput="this.value = Masks.phone(this.value)">
+                            <input type="text" name="whatsapp" class="form-control" value="${client.whatsapp}" required placeholder="(00) 00000-0000" data-mask="phone">
                         </div>
                     </div>
 
                     <div class="form-group">
                         <label>CEP</label>
                         <div style="display: flex; gap: 0.5rem;">
-                            <input type="text" name="cep" id="cep-input" class="form-control" value="${client.cep || ''}" placeholder="00000-000" oninput="this.value = Masks.cep(this.value)" maxlength="9">
+                            <input type="text" name="cep" id="cep-input" class="form-control" value="${client.cep || ''}" placeholder="00000-000" data-mask="cep" maxlength="9">
                             <button type="button" class="btn btn-secondary" onclick="buscarCep()" title="Buscar Endereço"><i class="fa-solid fa-search"></i></button>
                         </div>
                     </div>
@@ -259,7 +259,7 @@
                             showPassword(salvo.name || payload.name, salvo.cpf || payload.cpf, salvo.generated_password);
                         }
                     } catch (error) {
-                        alert('Erro ao salvar: ' + error.message);
+                        Toast.show('Erro ao salvar: ' + error.message);
                     }
                 }
             });
@@ -270,7 +270,7 @@
             const cep = cepInput.value.replace(/\D/g, '');
             
             if (cep.length !== 8) {
-                alert('CEP inválido. Digite 8 números.');
+                Toast.show('CEP inválido. Digite 8 números.');
                 return;
             }
 
@@ -279,7 +279,7 @@
                 const data = await response.json();
                 
                 if (data.erro) {
-                    alert('CEP não encontrado.');
+                    Toast.show('CEP não encontrado.');
                     return;
                 }
 
@@ -290,7 +290,7 @@
                 
             } catch (error) {
                 console.error('Erro ao buscar CEP:', error);
-                alert('Erro ao buscar endereço. Verifique sua conexão.');
+                Toast.show('Erro ao buscar endereço. Verifique sua conexão.');
             }
         };
 
@@ -382,7 +382,7 @@
             if (!client) return;
 
             if (!client.cpf) {
-                alert('Cadastre o CPF deste cliente antes: é com ele que o acesso ao aplicativo é feito.');
+                Toast.show('Cadastre o CPF deste cliente antes: é com ele que o acesso ao aplicativo é feito.');
                 return;
             }
 
@@ -409,7 +409,7 @@
                         // O modal atual fecha ao confirmar; o proximo abre depois.
                         setTimeout(() => showPassword(r.name, r.cpf, r.password), 60);
                     } catch (error) {
-                        alert('Erro ao gerar a senha: ' + error.message);
+                        Toast.show('Erro ao gerar a senha: ' + error.message);
                     }
                 }
             });
@@ -426,7 +426,7 @@
                         await Clients.delete(id);
                         refreshTable();
                     } catch (error) {
-                        alert('Erro ao excluir: ' + error.message);
+                        Toast.show('Erro ao excluir: ' + error.message);
                     }
                 }
             });
