@@ -21,6 +21,11 @@ const { SECRET_KEY } = require('../middleware/auth');
 // semana faria o usuario desistir e deixar o tunel importado manualmente.
 const EXPIRACAO = '30d';
 
+// O token do primeiro acesso nao navega no app: ele so atravessa a tela de nova
+// senha. Trinta dias para uma credencial que passou por WhatsApp seria uma
+// janela aberta a toa.
+const EXPIRACAO_PROVISORIA = '30m';
+
 /**
  * Busca por CPF comparando apenas digitos.
  *
@@ -60,14 +65,27 @@ exports.login = async (req, res) => {
             return res.status(401).json({ message: 'CPF ou senha invalidos.' });
         }
 
+        const provisoria = !!client.password_is_provisional;
+
+        // Token provisorio expira rapido: ele existe para atravessar uma unica
+        // tela. Trinta dias so fazem sentido depois que a senha e do cliente.
         const token = jwt.sign(
-            { id: client.id, cpf: onlyDigits(client.cpf), kind: 'client' },
+            {
+                id: client.id,
+                cpf: onlyDigits(client.cpf),
+                kind: 'client',
+                ...(provisoria ? { pwd: 'provisional' } : {})
+            },
             SECRET_KEY,
-            { expiresIn: EXPIRACAO }
+            { expiresIn: provisoria ? EXPIRACAO_PROVISORIA : EXPIRACAO }
         );
 
         res.json({
             token,
+            // O app usa isto para desviar direto a tela de nova senha. A recusa
+            // de verdade nao esta aqui e sim no middleware: um app antigo que
+            // ignore o campo esbarra em 403 ao pedir as conexoes.
+            must_change_password: provisoria,
             client: {
                 id: client.id,
                 name: client.name,
@@ -155,14 +173,39 @@ exports.changePassword = async (req, res) => {
         const client = await Client.scope('withPassword').findByPk(req.client.id);
         if (!client) return res.status(404).json({ message: 'Cliente nao encontrado.' });
 
+        // 400, e nao 401: quem chamou ESTA autenticado - o token e valido. O que
+        // veio errado foi um campo do corpo. Com 401 o app trataria o erro de
+        // digitacao como sessao expirada, apagaria o token e deixaria o cliente
+        // preso na tela de senha sem conseguir tentar de novo.
         if (!(await checkPassword(current_password, client.password_hash))) {
-            return res.status(401).json({ message: 'Senha atual incorreta.' });
+            return res.status(400).json({
+                code: 'WRONG_CURRENT_PASSWORD',
+                message: 'Senha atual incorreta.'
+            });
+        }
+
+        // Repetir a senha entregue pelo operador nao conclui o primeiro acesso:
+        // a copia que circulou por WhatsApp continuaria valendo.
+        if (String(new_password) === String(current_password)) {
+            return res.status(400).json({ message: 'A nova senha precisa ser diferente da atual.' });
         }
 
         const { hashPassword } = require('../utils/password');
-        await client.update({ password_hash: await hashPassword(new_password) });
+        await client.update({
+            password_hash: await hashPassword(new_password),
+            password_is_provisional: false
+        });
 
-        res.json({ message: 'Senha alterada com sucesso.' });
+        // Token novo e pleno: o que o app tem na mao pode ser o provisorio, que
+        // o middleware recusa em todas as outras rotas. Sem devolver este aqui,
+        // o cliente trocaria a senha e continuaria sem conseguir ver as conexoes.
+        const token = jwt.sign(
+            { id: client.id, cpf: onlyDigits(client.cpf), kind: 'client' },
+            SECRET_KEY,
+            { expiresIn: EXPIRACAO }
+        );
+
+        res.json({ message: 'Senha alterada com sucesso.', token });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Erro ao alterar a senha.' });

@@ -39,8 +39,35 @@ function protectClient(req, res, next) {
     if (payload.kind !== 'client') {
         return res.status(403).json({ message: 'Este token nao pertence a um cliente.' });
     }
+    // Token emitido contra a senha que o operador entregou. Ele abre uma unica
+    // porta: a troca de senha. Barrar aqui, e nao so na tela do app, e o que
+    // impede que a senha dita por WhatsApp baixe o .conf - e com ele a chave
+    // privada do peer - na mao de quem ouviu.
+    if (payload.pwd === 'provisional') {
+        return res.status(403).json({
+            code: 'PASSWORD_CHANGE_REQUIRED',
+            message: 'Defina uma nova senha para concluir o primeiro acesso.'
+        });
+    }
     req.client = payload;
     next();
 }
 
-module.exports = { protectAdmin, protectClient, SECRET_KEY };
+/**
+ * Variante usada so em /app/change-password.
+ *
+ * E a unica rota que precisa aceitar o token provisorio: exigir token pleno aqui
+ * trancaria o cliente do lado de fora - sem troca nao ha token pleno, e sem
+ * token pleno nao haveria troca.
+ */
+function protectClientForPasswordChange(req, res, next) {
+    const payload = readToken(req);
+    if (!payload) return res.status(401).json({ message: 'Autenticacao necessaria.' });
+    if (payload.kind !== 'client') {
+        return res.status(403).json({ message: 'Este token nao pertence a um cliente.' });
+    }
+    req.client = payload;
+    next();
+}
+
+module.exports = { protectAdmin, protectClient, protectClientForPasswordChange, SECRET_KEY };

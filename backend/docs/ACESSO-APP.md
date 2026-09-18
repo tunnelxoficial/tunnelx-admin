@@ -7,11 +7,34 @@ instalados, e o que ainda falta fechar.
 
 1. O operador cadastra o cliente em `clientes.html` com **CPF** preenchido e
    deixa marcado *"Gerar senha de acesso ao salvar"*.
-2. O painel mostra a senha **uma vez**, com botão de copiar.
-3. O cliente abre o app, digita CPF e senha.
-4. O app chama `POST /app/login`, guarda o token e, em seguida,
-   `GET /app/connections`. Cada conexão pronta vira um túnel importado
-   automaticamente.
+2. O painel mostra a senha **uma vez**, com botão de copiar. O cliente aparece na
+   lista como *"Aguardando 1º acesso"*.
+3. O cliente abre o app e toca em **Primeiro acesso**: confirma o CPF e digita a
+   senha provisória.
+4. O app chama `POST /app/login`. Como a senha ainda é a do balcão, a resposta
+   vem com `must_change_password: true` e um token que **só abre a troca de
+   senha**.
+5. O cliente define a senha dele. `POST /app/change-password` limpa a marca e
+   devolve um **token novo, pleno**.
+6. Só então o app chama `GET /app/connections`. Cada conexão pronta vira um
+   túnel importado automaticamente.
+
+Quem já fez o primeiro acesso entra direto pelo login normal — os passos 3 a 5
+não se repetem. Mas uma senha **regerada** pelo painel devolve o cliente ao
+passo 3, porque a senha voltou a ser de conhecimento do operador.
+
+## Por que a troca é obrigatória
+
+Entre o passo 2 e o passo 5 a senha existe fora do aparelho do cliente: foi dita
+em voz alta, mandada por WhatsApp ou anotada num papel. E `/app/connections`
+entrega o `config`, que carrega a **chave privada** do peer.
+
+Por isso a recusa não está na tela: está em `middleware/auth.js`. O token emitido
+contra senha provisória leva `pwd: 'provisional'` e recebe **403
+`PASSWORD_CHANGE_REQUIRED`** em toda rota que não seja a troca de senha — um app
+desatualizado, ou um cliente HTTP qualquer com a senha do balcão, esbarra no
+mesmo bloqueio. Esse token também dura **30 minutos** em vez de 30 dias: ele
+existe para atravessar uma tela.
 
 ## Por que o login é por CPF
 
@@ -45,18 +68,27 @@ O banco guarda **apenas o hash bcrypt**. Não existe tela de "ver senha" e não 
 esquecimento: a senha em claro trafega uma única vez, na resposta que a gerou.
 Perdeu, gera outra — a anterior morre no mesmo instante.
 
-O cliente pode trocar a dele pelo app em `POST /app/change-password`.
+Toda senha que sai de `generatePassword` nasce **provisória**
+(`Clients.password_is_provisional = 1`), e só deixa de ser quando o cliente
+define a dele em `POST /app/change-password`. A rota recusa repetir a senha
+provisória como "nova": isso manteria viva justamente a cópia que circulou.
 
 ## Endpoints
 
 | método | rota | quem |
 |---|---|---|
 | `POST` | `/app/login` | público (CPF + senha) |
-| `GET` | `/app/me` | token de cliente |
-| `GET` | `/app/connections` | token de cliente |
-| `POST` | `/app/change-password` | token de cliente |
+| `GET` | `/app/me` | token de cliente **pleno** |
+| `GET` | `/app/connections` | token de cliente **pleno** |
+| `POST` | `/app/change-password` | token de cliente, inclusive o provisório |
 | `POST` | `/clients/:id/password` | token de admin |
 | `DELETE` | `/clients/:id/password` | token de admin |
+
+Em `/app/change-password`, senha atual errada responde **400
+`WRONG_CURRENT_PASSWORD`**, não 401. O chamador está autenticado — o que veio
+errado foi um campo do corpo. Com 401 o app trataria o erro de digitação como
+sessão expirada e descartaria o token, prendendo o cliente na tela. Ali o 401
+ficou reservado para o que ele de fato significa: token ausente ou vencido.
 
 `/app/connections` devolve o `config` — que contém a **chave privada** do peer.
 Por isso o escopo vem do token e nunca de parâmetro: não existe `?clientId=`.
@@ -78,10 +110,18 @@ painel dura 1 dia e **não há renovação**: fechar hoje derruba o operador com
 sessão antiga no meio do expediente. A ordem certa é refresh token primeiro,
 `protectAdmin` depois.
 
-**2. Senha `123456` nos cadastros antigos.**
+**2. Senha `123456` nos cadastros antigos.** *(contida, não resolvida)*
 Havia um `beforeCreate` em `models/Client.js` que dava a senha `123456` a todo
 cliente criado. O hook foi removido — cliente novo nasce **sem** senha e sem
-acesso. Mas quem foi cadastrado antes continua com ela. Para localizar:
+acesso. Mas quem foi cadastrado antes continua com ela.
+
+A migração `scripts/add_password_provisional_column.js` marca como provisória
+**toda** senha que já existia na base, então esses cadastros não alcançam mais o
+`config`: quem entrar com `123456` cai na tela de nova senha e não passa dela.
+
+O buraco que sobra: quem sabe o CPF e tenta `123456` consegue **trocar** a senha
+e tomar a conta antes do dono. Enquanto a lista abaixo não for zerada, vale
+revogar em vez de esperar:
 
 ```sql
 SELECT id, name, cpf FROM Clients WHERE password_hash IS NOT NULL;

@@ -53,6 +53,22 @@ const Client = sequelize.define('Client', {
     password_hash: {
         type: DataTypes.STRING,
         allowNull: true
+    },
+    /**
+     * A senha atual foi gerada pelo operador, nao escolhida pelo cliente.
+     *
+     * Toda senha que sai de `generatePassword` nasce provisoria: ela foi lida em
+     * voz alta ou mandada por WhatsApp, entao ate o cliente trocar existe uma
+     * copia dela fora do aparelho dele. Enquanto a marca estiver de pe o token
+     * emitido no login so serve para trocar a senha - nao para baixar o .conf,
+     * que carrega a chave privada do peer.
+     *
+     * Volta a false quando o proprio cliente define a senha dele pelo app.
+     */
+    password_is_provisional: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
     }
 }, {
     timestamps: true,

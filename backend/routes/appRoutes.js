@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const appAuthController = require('../controllers/appAuthController');
-const { protectClient } = require('../middleware/auth');
+const { protectClient, protectClientForPasswordChange } = require('../middleware/auth');
 
 /**
  * Superficie do aplicativo do cliente.
@@ -15,6 +15,7 @@ router.post('/login', appAuthController.login);
 
 router.get('/me', protectClient, appAuthController.me);
 router.get('/connections', protectClient, appAuthController.connections);
-router.post('/change-password', protectClient, appAuthController.changePassword);
+// Unica rota que aceita o token do primeiro acesso - ver middleware/auth.js.
+router.post('/change-password', protectClientForPasswordChange, appAuthController.changePassword);
 
 module.exports = router;

@@ -39,7 +39,13 @@ exports.getAll = async (req, res) => {
 
         res.json(clients.map((c) => {
             const { password_hash, ...resto } = c.toJSON();
-            return { ...resto, has_app_access: !!password_hash };
+            return {
+                ...resto,
+                has_app_access: !!password_hash,
+                // "tem senha, mas ainda e a que o operador entregou" - o painel
+                // usa isso para mostrar que o primeiro acesso nao aconteceu.
+                awaiting_first_access: !!password_hash && !!c.password_is_provisional
+            };
         }));
     } catch (error) {
         console.error(error);
@@ -69,6 +75,8 @@ exports.create = async (req, res) => {
             }
             senhaEmClaro = generatePassword();
             dados.password_hash = await hashPassword(senhaEmClaro);
+            // Senha que o operador entregou: vale so para o primeiro acesso.
+            dados.password_is_provisional = true;
         }
 
         const novo = await Client.create(dados);
@@ -107,6 +115,7 @@ exports.update = async (req, res) => {
             }
             senhaEmClaro = generatePassword();
             dados.password_hash = await hashPassword(senhaEmClaro);
+            dados.password_is_provisional = true;
         }
 
         await client.update(dados);
@@ -138,7 +147,13 @@ exports.setPassword = async (req, res) => {
         }
 
         const senhaEmClaro = generatePassword();
-        await client.update({ password_hash: await hashPassword(senhaEmClaro) });
+        await client.update({
+            password_hash: await hashPassword(senhaEmClaro),
+            // Regerar devolve o cliente ao primeiro acesso: se ele ja tinha
+            // escolhido uma senha, ela acabou de morrer e quem esta com o papel
+            // na mao agora e o operador. O app vai exigir a troca de novo.
+            password_is_provisional: true
+        });
 
         res.json({
             id: client.id,
@@ -146,7 +161,8 @@ exports.setPassword = async (req, res) => {
             cpf: client.cpf,
             password: senhaEmClaro,
             has_app_access: true,
-            message: 'Anote agora: esta senha nao pode ser consultada depois.'
+            password_is_provisional: true,
+            message: 'Anote agora: esta senha nao pode ser consultada depois. O cliente vai troca-la no primeiro acesso ao aplicativo.'
         });
     } catch (error) {
         console.error(error);
@@ -161,7 +177,7 @@ exports.revokePassword = async (req, res) => {
         const client = await Client.scope('withPassword').findByPk(id);
         if (!client) return res.status(404).json({ message: 'Cliente nao encontrado.' });
 
-        await client.update({ password_hash: null });
+        await client.update({ password_hash: null, password_is_provisional: false });
         res.json({ id: client.id, has_app_access: false, message: 'Acesso ao aplicativo revogado.' });
     } catch (error) {
         console.error(error);
