@@ -5,6 +5,9 @@ const Plan = require('../models/Plan');
 const { sequelize } = require('../config/db');
 const { checkPassword, onlyDigits } = require('../utils/password');
 const { SECRET_KEY } = require('../middleware/auth');
+const {
+    novaSessao, normalizarDispositivo, podeEntrar
+} = require('../utils/deviceSession');
 
 /**
  * Autenticacao do CLIENTE no aplicativo - separada do login do painel.
@@ -60,9 +63,32 @@ async function acharPorCpf(cpf) {
     return Client.scope('withPassword').findByPk(linhas[0].id);
 }
 
+/**
+ * Abre uma sessao e devolve o token que a representa.
+ *
+ * Grava o `sid` no cliente ANTES de assinar o token: se a ordem fosse inversa e
+ * a escrita falhasse, o aparelho sairia daqui com um token que nenhuma
+ * requisicao aceitaria.
+ */
+async function abrirSessao(client, dispositivo, extra = {}) {
+    const sid = novaSessao();
+
+    await client.update({
+        active_session_id: sid,
+        active_device: normalizarDispositivo(dispositivo),
+        session_started_at: new Date()
+    });
+
+    return jwt.sign(
+        { id: client.id, cpf: onlyDigits(client.cpf), kind: 'client', sid, ...extra },
+        SECRET_KEY,
+        { expiresIn: extra.pwd === 'provisional' ? EXPIRACAO_PROVISORIA : EXPIRACAO }
+    );
+}
+
 exports.login = async (req, res) => {
     try {
-        const { cpf, password } = req.body || {};
+        const { cpf, password, device_name, force, current_session } = req.body || {};
 
         if (!cpf || !password) {
             return res.status(400).json({ message: 'Informe CPF e senha.' });
@@ -77,23 +103,44 @@ exports.login = async (req, res) => {
             return res.status(401).json({ message: 'CPF ou senha invalidos.' });
         }
 
+        /*
+         * Uma conta, um aparelho.
+         *
+         * A recusa vem DEPOIS da conferencia da senha, de proposito: responder
+         * "esta conta esta em uso" a quem errou a senha contaria a um estranho
+         * que o CPF e cliente e que alguem esta logado agora.
+         *
+         * Nao derruba o outro aparelho sozinho. Quem esta entrando ve onde a
+         * conta esta aberta e decide — `force` e essa decisao voltando. Derrubar
+         * em silencio faria dois telefones se expulsarem em looping, e nenhum dos
+         * donos entenderia por que.
+         */
+        const veredito = podeEntrar(client, !!force, current_session || null);
+        if (!veredito.ok) {
+            return res.status(409).json({
+                code: veredito.code,
+                device: veredito.device,
+                since: veredito.since,
+                message: 'Sua conta esta aberta em ' + veredito.device +
+                    '. Para entrar aqui, o outro aparelho sera desconectado.'
+            });
+        }
+
         const provisoria = !!client.password_is_provisional;
 
         // Token provisorio expira rapido: ele existe para atravessar uma unica
-        // tela. Trinta dias so fazem sentido depois que a senha e do cliente.
-        const token = jwt.sign(
-            {
-                id: client.id,
-                cpf: onlyDigits(client.cpf),
-                kind: 'client',
-                ...(provisoria ? { pwd: 'provisional' } : {})
-            },
-            SECRET_KEY,
-            { expiresIn: provisoria ? EXPIRACAO_PROVISORIA : EXPIRACAO }
+        // tela. Dez anos so fazem sentido depois que a senha e do cliente.
+        const token = await abrirSessao(
+            client,
+            device_name,
+            provisoria ? { pwd: 'provisional' } : {}
         );
 
         res.json({
             token,
+            // O aparelho guarda isto para, num login futuro, poder dizer "a
+            // sessao ativa sou eu" e nao ser tratado como invasor de si mesmo.
+            session_id: client.active_session_id,
             // O app usa isto para desviar direto a tela de nova senha. A recusa
             // de verdade nao esta aqui e sim no middleware: um app antigo que
             // ignore o campo esbarra em 403 ao pedir as conexoes.
@@ -339,18 +386,54 @@ exports.changePassword = async (req, res) => {
             password_is_provisional: false
         });
 
-        // Token novo e pleno: o que o app tem na mao pode ser o provisorio, que
-        // o middleware recusa em todas as outras rotas. Sem devolver este aqui,
-        // o cliente trocaria a senha e continuaria sem conseguir ver as conexoes.
-        const token = jwt.sign(
-            { id: client.id, cpf: onlyDigits(client.cpf), kind: 'client' },
-            SECRET_KEY,
-            { expiresIn: EXPIRACAO }
-        );
+        /*
+         * Token novo e pleno: o que o app tem na mao pode ser o provisorio, que
+         * o middleware recusa em todas as outras rotas.
+         *
+         * Abre sessao NOVA em vez de manter a atual: trocar a senha e o gesto de
+         * quem desconfia que alguem mais tem acesso, e a sessao antiga deixa de
+         * valer no mesmo instante. Se houvesse outro aparelho aberto, ele cai.
+         */
+        const token = await abrirSessao(client, req.body?.device_name);
 
-        res.json({ message: 'Senha alterada com sucesso.', token });
+        res.json({
+            message: 'Senha alterada com sucesso.',
+            token,
+            session_id: client.active_session_id
+        });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Erro ao alterar a senha.' });
+    }
+};
+
+/**
+ * Encerra a sessao deste aparelho.
+ *
+ * Existe porque a conta e de um aparelho so: sem uma forma de soltar a conta, o
+ * usuario teria que derrubar a propria sessao pela tela de recusa toda vez que
+ * trocasse de telefone.
+ *
+ * So solta se o `sid` do token for o que esta gravado. Sem essa conferencia, um
+ * token antigo — de uma sessao ja substituida — deslogaria o aparelho que esta
+ * em uso agora.
+ */
+exports.logout = async (req, res) => {
+    try {
+        const client = await Client.findByPk(req.client.id);
+        if (!client) return res.status(404).json({ message: 'Cliente nao encontrado.' });
+
+        if (client.active_session_id && client.active_session_id === req.client.sid) {
+            await client.update({
+                active_session_id: null,
+                active_device: null,
+                session_started_at: null
+            });
+        }
+
+        res.json({ message: 'Sessao encerrada.' });
+    } catch (error) {
+        console.error('[app/logout]', error);
+        res.status(500).json({ message: 'Erro ao encerrar a sessao.' });
     }
 };

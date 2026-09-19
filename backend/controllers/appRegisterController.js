@@ -3,6 +3,7 @@ const Client = require('../models/Client');
 const { sequelize } = require('../config/db');
 const { hashPassword, onlyDigits, isValidCpf } = require('../utils/password');
 const { SECRET_KEY } = require('../middleware/auth');
+const { novaSessao, normalizarDispositivo } = require('../utils/deviceSession');
 
 /**
  * Auto-cadastro do cliente pelo aplicativo.
@@ -42,7 +43,7 @@ function emailValido(v) {
 exports.register = async (req, res) => {
     try {
         const {
-            name, cpf, email, whatsapp, password,
+            name, cpf, email, whatsapp, password, device_name,
             cep, uf, cidade, bairro, logradouro, complemento
         } = req.body || {};
 
@@ -88,19 +89,24 @@ exports.register = async (req, res) => {
             logradouro: logradouro || null,
             complemento: complemento || null,
             password_hash: await hashPassword(String(password)),
-            password_is_provisional: false
+            password_is_provisional: false,
+            // Conta nasce ja aberta neste aparelho — quem cadastrou esta aqui.
+            active_session_id: novaSessao(),
+            active_device: normalizarDispositivo(device_name),
+            session_started_at: new Date()
         });
 
         // Token pleno: a senha e do dono desde o primeiro segundo, entao nao ha
         // troca obrigatoria pela frente.
         const token = jwt.sign(
-            { id: client.id, cpf: onlyDigits(client.cpf), kind: 'client' },
+            { id: client.id, cpf: onlyDigits(client.cpf), kind: 'client', sid: client.active_session_id },
             SECRET_KEY,
             { expiresIn: EXPIRACAO }
         );
 
         res.status(201).json({
             token,
+            session_id: client.active_session_id,
             must_change_password: false,
             client: {
                 id: client.id,

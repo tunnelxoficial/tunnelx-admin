@@ -33,7 +33,43 @@ function protectAdmin(req, res, next) {
     next();
 }
 
-function protectClient(req, res, next) {
+/**
+ * A conta ainda esta aberta NESTE aparelho?
+ *
+ * Consulta por requisicao, de proposito. O JWT nao tem revogacao: uma vez
+ * emitido vale ate expirar, e aqui a expiracao e de dez anos. Sem esta conferida
+ * o "sair do outro aparelho" seria enfeite — o token antigo continuaria
+ * funcionando lado a lado com o novo, que e o jeito de uma assinatura virar duas.
+ *
+ * Devolve null quando esta tudo certo; caso contrario, a resposta a enviar.
+ */
+async function conferirSessao(payload, res) {
+    const Client = require('../models/Client');
+    const { sessaoValida, mensagemDaRecusa } = require('../utils/deviceSession');
+
+    let client;
+    try {
+        client = await Client.findByPk(payload.id, {
+            attributes: ['id', 'active_session_id']
+        });
+    } catch (error) {
+        // Banco fora do ar. Negar aqui derrubaria todo mundo por uma falha de
+        // infraestrutura; 503 diz a verdade e o app tenta de novo sem apagar a
+        // sessao guardada (que so o 401 apaga).
+        console.error('[auth] falha ao conferir a sessao:', error.message);
+        return res.status(503).json({ message: 'Nao foi possivel validar sua sessao.' });
+    }
+
+    const veredito = sessaoValida(payload.sid, client);
+    if (veredito.ok) return null;
+
+    return res.status(401).json({
+        code: veredito.code,
+        message: mensagemDaRecusa(veredito.code)
+    });
+}
+
+async function protectClient(req, res, next) {
     const payload = readToken(req);
     if (!payload) return res.status(401).json({ message: 'Autenticacao necessaria.' });
     if (payload.kind !== 'client') {
@@ -49,6 +85,10 @@ function protectClient(req, res, next) {
             message: 'Defina uma nova senha para concluir o primeiro acesso.'
         });
     }
+
+    const recusa = await conferirSessao(payload, res);
+    if (recusa) return recusa;
+
     req.client = payload;
     next();
 }
@@ -60,12 +100,18 @@ function protectClient(req, res, next) {
  * trancaria o cliente do lado de fora - sem troca nao ha token pleno, e sem
  * token pleno nao haveria troca.
  */
-function protectClientForPasswordChange(req, res, next) {
+async function protectClientForPasswordChange(req, res, next) {
     const payload = readToken(req);
     if (!payload) return res.status(401).json({ message: 'Autenticacao necessaria.' });
     if (payload.kind !== 'client') {
         return res.status(403).json({ message: 'Este token nao pertence a um cliente.' });
     }
+
+    // A sessao vale aqui tambem: o token provisorio ja nasce com `sid`, e quem
+    // foi desconectado nao deve conseguir trocar a senha da conta.
+    const recusa = await conferirSessao(payload, res);
+    if (recusa) return recusa;
+
     req.client = payload;
     next();
 }

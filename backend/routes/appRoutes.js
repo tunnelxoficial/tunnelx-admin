@@ -31,6 +31,10 @@ router.post('/change-password', protectClientForPasswordChange, appAuthControlle
 
 router.get('/me', protectClient, appAuthController.me);
 
+// Solta a conta deste aparelho, para poder entrar em outro sem precisar
+// derrubar a sessao pela tela de recusa.
+router.post('/logout', protectClient, appAuthController.logout);
+
 // Assinatura: precisa de token, mas NAO de assinatura em dia — e justamente
 // aqui que quem esta sem plano ou bloqueado vem resolver.
 router.get('/plans', protectClient, appSubscriptionController.listPlans);

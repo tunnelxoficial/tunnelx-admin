@@ -69,6 +69,39 @@ const Client = sequelize.define('Client', {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: false
+    },
+
+    /* ----------------------------------------------------------- sessao unica
+     *
+     * A conta vale em UM aparelho por vez.
+     *
+     * O JWT sozinho nao consegue impor isso: ele e auto-contido, qualquer copia
+     * dele vale ate expirar, e aqui a expiracao e de dez anos. Dois telefones
+     * com o mesmo login funcionariam para sempre, lado a lado — que e exatamente
+     * o jeito de uma assinatura virar duas.
+     *
+     * A solucao e este identificador. Todo token carrega o "sid" da sessao que o
+     * emitiu, e cada requisicao confere se ele ainda e o que esta gravado aqui.
+     * Entrar em outro aparelho grava um "sid" novo, e o anterior deixa de valer
+     * na requisicao seguinte — sem precisar manter lista de tokens revogados.
+     *
+     * O custo e uma consulta por requisicao autenticada. E o preco de ter
+     * revogacao de verdade num esquema que, por natureza, nao a tem.
+     */
+    active_session_id: {
+        type: DataTypes.STRING(64),
+        allowNull: true
+    },
+
+    /** Como o aparelho se apresentou, para a recusa dizer ONDE a conta esta. */
+    active_device: {
+        type: DataTypes.STRING(120),
+        allowNull: true
+    },
+
+    session_started_at: {
+        type: DataTypes.DATE,
+        allowNull: true
     }
 }, {
     timestamps: true,
