@@ -46,6 +46,13 @@ router.get('/subscription/payment', protectClient, appSubscriptionController.pen
 // O convidado tambem passa por aqui — ele nao assina, quem pagou foi o titular.
 router.get('/connections', protectClient, requireActiveSubscription, appAuthController.connections);
 
+// Resumo barato do mesmo conteudo, para o app perceber mudancas sem baixar as
+// configuracoes. E por aqui que o convidado descobre que o titular o removeu.
+// Fica acima das rotas com ':id' de proposito: hoje nao ha conflito (os caminhos
+// tem numeros de segmentos diferentes), mas um futuro /connections/:id casaria
+// com 'state' se viesse antes.
+router.get('/connections/state', protectClient, requireActiveSubscription, appAuthController.connectionsState);
+
 /*
  * Acesso provisionado: o titular empresta o tunel para a familia.
  *

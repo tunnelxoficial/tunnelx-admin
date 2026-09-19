@@ -140,6 +140,73 @@ exports.me = async (req, res) => {
  * app precisa mostrar "em preparacao" em vez de omitir a conexao que o cliente
  * acabou de comprar e nao encontra.
  */
+/**
+ * Resumo do estado das conexoes — barato o bastante para ser consultado sempre.
+ *
+ * Mesmo escopo e mesmo portao de /app/connections, mas sem `config` nem o QR:
+ * a resposta e de algumas centenas de bytes contra dezenas de KB. O app usa isto
+ * para perceber SOZINHO que algo mudou — em especial que o titular removeu o
+ * convidado — sem ficar baixando a configuracao inteira de minuto em minuto na
+ * rede movel do cliente.
+ *
+ * O `revision` resume tudo que obriga o app a reagir: quais tuneis existem, se
+ * ja foram provisionados e ate quando cada acesso emprestado vale. Se ele nao
+ * mudou, nao ha o que fazer.
+ *
+ * Um 402 aqui NAO e erro: e a resposta certa quando o acesso acabou. O app trata
+ * isso removendo os tuneis da conta e derrubando a VPN.
+ */
+exports.connectionsState = async (req, res) => {
+    try {
+        const crypto = require('crypto');
+        const { sharesDoConvidado } = require('../services/shareService');
+
+        const proprias = await Connection.findAll({
+            where: { ClientId: req.client.id },
+            attributes: ['id', 'status', 'status_queue', 'updatedAt'],
+            order: [['id', 'DESC']]
+        });
+
+        const itens = proprias.map((c) => ({
+            id: c.id,
+            shared: false,
+            ready: c.status_queue === 'CREATED',
+            status: c.status,
+            updatedAt: c.updatedAt,
+            expires_at: null
+        }));
+
+        for (const share of await sharesDoConvidado(req.client.id)) {
+            const c = await Connection.findByPk(share.ConnectionId, {
+                attributes: ['id', 'status', 'status_queue', 'updatedAt']
+            });
+            if (!c) continue;
+            itens.push({
+                id: c.id,
+                shared: true,
+                ready: c.status_queue === 'CREATED',
+                status: c.status,
+                updatedAt: c.updatedAt,
+                expires_at: share.expires_at
+            });
+        }
+
+        const assinatura = itens
+            .map((i) => [i.id, i.shared ? 1 : 0, i.ready ? 1 : 0, i.status,
+                new Date(i.updatedAt).getTime(),
+                i.expires_at ? new Date(i.expires_at).getTime() : 0].join(':'))
+            .join('|');
+
+        res.json({
+            revision: crypto.createHash('sha1').update(assinatura).digest('hex').slice(0, 16),
+            items: itens
+        });
+    } catch (error) {
+        console.error('[app/connections/state]', error);
+        res.status(500).json({ message: 'Erro ao consultar o estado das conexoes.' });
+    }
+};
+
 exports.connections = async (req, res) => {
     try {
         const { sharesDoConvidado, contarOcupacao } = require('../services/shareService');
