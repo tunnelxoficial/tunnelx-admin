@@ -1,72 +1,232 @@
 const Connection = require('../models/Connection');
-const { sequelize } = require('../config/db');
+const Subscription = require('../models/Subscription');
+const Plan = require('../models/Plan');
+const Client = require('../models/Client');
+
+/**
+ * Webhook do Asaas — a única coisa que libera ou corta o acesso pago.
+ *
+ * Por isso ele é autenticado. Antes aceitava qualquer POST: bastava mandar
+ * `{event:'PAYMENT_RECEIVED', payment:{...}}` para ativar uma conexão sem
+ * pagar nada. Agora exige o token configurado no painel do Asaas, enviado no
+ * cabeçalho `asaas-access-token`.
+ */
+
+const TOKEN = process.env.ASAAS_WEBHOOK_TOKEN;
+
+if (!TOKEN) {
+    console.warn(
+        '[webhook] ASAAS_WEBHOOK_TOKEN nao definido. O webhook vai RECUSAR todas as ' +
+        'chamadas. Defina o mesmo token aqui e no painel do Asaas.'
+    );
+}
+
+/** Quantos ciclos somar ao confirmar um pagamento, a partir do ciclo do plano. */
+function fimDoPeriodo(cycle, base = new Date()) {
+    const d = new Date(base);
+    const meses = {
+        mensal: 1, bimestral: 2, trimestral: 3, semestral: 6, anual: 12
+    }[String(cycle || '').trim().toLowerCase()] ?? 1;
+    d.setMonth(d.getMonth() + meses);
+    return d;
+}
+
+/**
+ * Acha a assinatura pelo que o evento carrega, do mais específico ao mais frouxo.
+ * externalReference é o nosso próprio id — é o vínculo mais confiável.
+ */
+async function acharAssinatura(payment) {
+    if (payment?.externalReference) {
+        const porRef = await Subscription.findByPk(Number(payment.externalReference));
+        if (porRef) return porRef;
+    }
+    if (payment?.subscription) {
+        const porSub = await Subscription.findOne({
+            where: { asaas_subscription_id: payment.subscription }
+        });
+        if (porSub) return porSub;
+    }
+    if (payment?.customer) {
+        return Subscription.findOne({
+            where: { asaas_customer_id: payment.customer },
+            order: [['id', 'DESC']]
+        });
+    }
+    return null;
+}
+
+/**
+ * Cria a conexão do cliente assim que a assinatura fica em dia.
+ *
+ * Nasce com status_queue 'WAIT': é o que coloca o túnel na fila do
+ * provisionador, que gera config e QR e marca 'CREATED'. Idempotente — um
+ * webhook reenviado (o Asaas repete em caso de falha) não pode render dois
+ * túneis para o mesmo cliente.
+ */
+async function garantirConexao(sub) {
+    const jaTem = await Connection.findOne({ where: { ClientId: sub.ClientId } });
+    if (jaTem) {
+        if (jaTem.status !== 'active') await jaTem.update({ status: 'active', payment_status: 'PAID' });
+        return jaTem;
+    }
+
+    const [client, plan] = await Promise.all([
+        Client.findByPk(sub.ClientId),
+        Plan.findByPk(sub.PlanId)
+    ]);
+    if (!client || !plan) {
+        console.error('[webhook] cliente ou plano ausente para a assinatura', sub.id);
+        return null;
+    }
+
+    const nova = await Connection.create({
+        name: client.name,
+        cpf: client.cpf,
+        phone: client.whatsapp,
+        email: client.email,
+        total_connections: plan.total_connections || 1,
+        data_limit: plan.dataLimit,
+        status: 'active',
+        internet: true,
+        ClientId: client.id,
+        PlanId: plan.id,
+        asaas_customer_id: sub.asaas_customer_id,
+        asaas_subscription_id: sub.asaas_subscription_id,
+        payment_status: 'PAID'
+    });
+
+    console.log(`[webhook] conexao ${nova.id} criada e enfileirada para o cliente ${client.id}`);
+    return nova;
+}
+
+/** Corta o acesso das conexões do cliente sem apagá-las. */
+async function desativarConexoes(clientId, status) {
+    const [qtd] = await Connection.update(
+        { status },
+        { where: { ClientId: clientId } }
+    );
+    return qtd;
+}
 
 const webhookController = {
     handleWebhook: async (req, res) => {
+        // Autenticação primeiro: o corpo nem é olhado sem o token certo.
+        const enviado = req.headers['asaas-access-token'];
+        if (!TOKEN || enviado !== TOKEN) {
+            console.warn('[webhook] chamada recusada: token ausente ou invalido');
+            return res.status(401).json({ message: 'nao autorizado' });
+        }
+
         try {
-            const { event, payment } = req.body;
+            const { event, payment } = req.body || {};
+            if (!event) return res.status(400).json({ message: 'evento ausente' });
 
-            console.log('Webhook received:', event, payment.id);
+            console.log('[webhook]', event, payment?.id || '');
 
-            // We can identify the connection by asaas_customer_id or externalReference
-            // Ideally we stored asaas IDs in Connection.
-            
-            // Find connection
-            // Strategy: 
-            // 1. Try finding by asaas_payment_id
-            // 2. Try finding by asaas_subscription_id (if payment has subscription field)
-            // 3. Try finding by asaas_customer_id (might return multiple, need to filter)
-            // 4. Try finding by ClientId using externalReference (if it's the client ID)
+            const sub = payment ? await acharAssinatura(payment) : null;
 
-            let connection = null;
+            // ---- assinatura do aplicativo -----------------------------------
+            if (sub) {
+                if (event === 'PAYMENT_CONFIRMED' || event === 'PAYMENT_RECEIVED') {
+                    const plan = await Plan.findByPk(sub.PlanId);
+                    await sub.update({
+                        status: 'ACTIVE',
+                        overdue_since: null,           // pagou: a carência zera
+                        current_period_end: fimDoPeriodo(plan?.cycle),
+                        last_payment_id: payment.id,
+                        last_payment_status: payment.status || 'CONFIRMED'
+                    });
+                    await garantirConexao(sub);
+                    return res.status(200).json({ received: true });
+                }
 
-            // 1. Direct match on payment ID (if we stored it)
-            if (payment.id) {
-                connection = await Connection.findOne({ where: { asaas_payment_id: payment.id } });
+                if (event === 'PAYMENT_OVERDUE') {
+                    await sub.update({
+                        status: 'OVERDUE',
+                        // Só marca na primeira vez: um segundo webkook de atraso
+                        // não pode reiniciar a contagem dos 3 dias.
+                        overdue_since: sub.overdue_since || new Date(),
+                        last_payment_id: payment.id,
+                        last_payment_status: 'OVERDUE'
+                    });
+                    console.log(`[webhook] assinatura ${sub.id} em atraso; carencia iniciada`);
+                    return res.status(200).json({ received: true });
+                }
+
+                if (event === 'PAYMENT_REFUNDED' || event === 'PAYMENT_CHARGEBACK_REQUESTED'
+                    || event === 'PAYMENT_DELETED') {
+                    await sub.update({ status: 'CANCELED', canceled_at: new Date() });
+                    await desativarConexoes(sub.ClientId, 'inactive');
+                    return res.status(200).json({ received: true });
+                }
+
+                // Cobrança criada para o próximo ciclo: guarda para o app poder
+                // mostrar o QR de quem quer adiantar ou regularizar.
+                if (event === 'PAYMENT_CREATED') {
+                    await sub.update({ last_payment_id: payment.id, last_payment_status: payment.status });
+                    return res.status(200).json({ received: true });
+                }
             }
 
-            // 2. Match by Subscription
-            if (!connection && payment.subscription) {
-                connection = await Connection.findOne({ where: { asaas_subscription_id: payment.subscription } });
+            // ---- eventos do Pix Automático ----------------------------------
+            if (event.startsWith('PIX_AUTOMATIC_AUTHORIZATION')) {
+                const auth = req.body.authorization || req.body.pixAutomaticAuthorization;
+                if (auth?.id) {
+                    const porPix = await Subscription.findOne({
+                        where: { pix_authorization_id: auth.id }
+                    });
+                    if (porPix) {
+                        if (auth.status === 'ACTIVE') {
+                            // A autorizacao ativa significa consentimento dado; o
+                            // acesso em si ainda depende do pagamento confirmado.
+                            console.log(`[webhook] autorizacao Pix ativa para a assinatura ${porPix.id}`);
+                        } else if (['CANCELLED', 'CANCELED', 'EXPIRED', 'REJECTED'].includes(auth.status)) {
+                            await porPix.update({ status: 'CANCELED', canceled_at: new Date() });
+                            await desativarConexoes(porPix.ClientId, 'inactive');
+                        }
+                    }
+                }
+                return res.status(200).json({ received: true });
             }
 
-            // 3. Match by Customer
-            if (!connection && payment.customer) {
-                // This might be risky if a customer has multiple connections, but assuming 1 active connection per customer for now
-                connection = await Connection.findOne({ 
-                    where: { asaas_customer_id: payment.customer },
-                    order: [['createdAt', 'DESC']]
-                });
+            // ---- fluxo antigo: cobrança ligada direto a uma conexão ----------
+            // O checkout web (pre-cadastro) ainda cria a conexão no ato e anota
+            // os ids do Asaas nela.
+            if (payment) {
+                let connection = null;
+                if (payment.id) {
+                    connection = await Connection.findOne({ where: { asaas_payment_id: payment.id } });
+                }
+                if (!connection && payment.subscription) {
+                    connection = await Connection.findOne({
+                        where: { asaas_subscription_id: payment.subscription }
+                    });
+                }
+                if (!connection && payment.customer) {
+                    connection = await Connection.findOne({
+                        where: { asaas_customer_id: payment.customer },
+                        order: [['createdAt', 'DESC']]
+                    });
+                }
+
+                if (connection) {
+                    if (event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_CONFIRMED') {
+                        await connection.update({ payment_status: 'PAID', status: 'active' });
+                    } else if (event === 'PAYMENT_OVERDUE') {
+                        await connection.update({ payment_status: 'OVERDUE', status: 'payment_pending' });
+                    } else if (event === 'PAYMENT_DELETED' || event === 'PAYMENT_REFUNDED') {
+                        await connection.update({ payment_status: 'REFUNDED', status: 'inactive' });
+                    }
+                    return res.status(200).json({ received: true });
+                }
             }
 
-            if (!connection) {
-                console.warn('Connection not found for webhook payment:', payment.id);
-                return res.status(200).json({ received: true }); // Acknowledge anyway
-            }
-
-            // Update Status based on Event
-            if (event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_CONFIRMED') {
-                await connection.update({ 
-                    payment_status: 'PAID',
-                    status: 'active' 
-                });
-                console.log(`Connection ${connection.id} activated via webhook.`);
-            } else if (event === 'PAYMENT_OVERDUE') {
-                 await connection.update({ 
-                    payment_status: 'OVERDUE',
-                    status: 'payment_pending' // or inactive
-                });
-                console.log(`Connection ${connection.id} marked overdue.`);
-            } else if (event === 'PAYMENT_DELETED' || event === 'PAYMENT_REFUNDED') {
-                 await connection.update({ 
-                    payment_status: 'REFUNDED',
-                    status: 'inactive' 
-                });
-            }
-
+            // Evento que não é nosso: 200 mesmo assim. Responder erro faria o
+            // Asaas reenviar em laço e, depois de tantas falhas, suspender a fila.
+            console.warn('[webhook] evento sem destino:', event, payment?.id || '');
             res.status(200).json({ received: true });
         } catch (error) {
-            console.error('Webhook Error:', error);
+            console.error('[webhook] falha ao processar:', error);
             res.status(500).json({ error: 'Webhook processing failed' });
         }
     }

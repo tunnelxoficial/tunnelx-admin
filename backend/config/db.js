@@ -13,9 +13,21 @@ const sequelize = new Sequelize(
         dialectOptions: {
             options: {
                 encrypt: false, // Use true for Azure, false for local dev usually
-                trustServerCertificate: true // Self-signed certs
+                trustServerCertificate: true, // Self-signed certs
+                /*
+                 * O padrao do tedious e 15s, e este servidor leva mais que isso
+                 * so para concluir o handshake — medido daqui: a porta 1433
+                 * aceita a conexao TCP na hora, mas o login SQL estoura os 15s.
+                 * Com 30s conecta sem falhar.
+                 *
+                 * Nao e detalhe de script: connectDB() roda no boot da API, e
+                 * um timeout ali derruba a aplicacao inteira num restart.
+                 */
+                connectTimeout: 30000,
+                requestTimeout: 30000
             }
-        }
+        },
+        pool: { max: 10, min: 0, acquire: 30000, idle: 10000 }
     }
 );
 

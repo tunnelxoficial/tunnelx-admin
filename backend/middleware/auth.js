@@ -70,4 +70,46 @@ function protectClientForPasswordChange(req, res, next) {
     next();
 }
 
-module.exports = { protectAdmin, protectClient, protectClientForPasswordChange, SECRET_KEY };
+/**
+ * Portao da assinatura: so passa quem tem acesso liberado.
+ *
+ * A decisao NAO e tomada aqui - vem de utils/subscriptionAccess, o mesmo lugar
+ * que responde ao app qual tela mostrar. Duas implementacoes da mesma regra
+ * divergem no primeiro ajuste, e divergir aqui significa entregar a chave
+ * privada do tunel para quem parou de pagar.
+ *
+ * Responde 402 com o veredito inteiro: o app usa o campo `state` para escolher
+ * entre a tela de planos, o aviso de atraso e a tela de bloqueio.
+ */
+async function requireActiveSubscription(req, res, next) {
+    try {
+        const Subscription = require('../models/Subscription');
+        const { evaluateAccess } = require('../utils/subscriptionAccess');
+
+        const sub = await Subscription.findOne({
+            where: { ClientId: req.client.id },
+            order: [['id', 'DESC']]
+        });
+
+        const acesso = evaluateAccess(sub);
+        if (acesso.allowed) {
+            // Segue adiante para a rota poder devolver o aviso de carencia
+            // junto com as conexoes.
+            req.subscriptionAccess = acesso;
+            return next();
+        }
+
+        return res.status(402).json({
+            code: 'SUBSCRIPTION_REQUIRED',
+            access: acesso,
+            message: acesso.message
+        });
+    } catch (error) {
+        console.error('[auth] falha ao verificar a assinatura:', error);
+        // Falhou a verificacao: nega. Num controle de acesso pago, o erro
+        // fecha a porta - liberar "na duvida" e dar o produto de graca.
+        return res.status(503).json({ message: 'Nao foi possivel verificar sua assinatura.' });
+    }
+}
+
+module.exports = { protectAdmin, protectClient, protectClientForPasswordChange, requireActiveSubscription, SECRET_KEY };
