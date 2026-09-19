@@ -4,6 +4,20 @@ const jwt = require('jsonwebtoken');
 
 const SECRET_KEY = process.env.JWT_SECRET || 'tunnelx_super_secret_key';
 
+/*
+ * Dez anos. Na pratica, sessao que nao expira.
+ *
+ * A troca e consciente: ninguem precisa refazer login, e some a fricção de
+ * sessao vencida no meio do uso. O custo e que um token vazado (aparelho
+ * perdido, backup do celular, log de proxy) vale por uma decada, e nao existe
+ * revogacao — o JWT e auto-contido, nao ha lista de tokens invalidados.
+ *
+ * O jeito de cortar acesso hoje: trocar o JWT_SECRET (derruba TODAS as sessoes
+ * de uma vez) ou, para um cliente so, revogar a senha pelo painel e cancelar a
+ * assinatura, ja que /app/connections exige assinatura em dia a cada chamada.
+ */
+const EXPIRACAO_ADMIN = '10y';
+
 exports.register = async (req, res) => {
     try {
         const { username, email, password } = req.body;
@@ -53,7 +67,7 @@ exports.login = async (req, res) => {
             // assinatura, publicos diferentes. Ver middleware/auth.js.
             { id: user.id, email: user.email, role: user.role, kind: 'admin' },
             SECRET_KEY,
-            { expiresIn: '1d' }
+            { expiresIn: EXPIRACAO_ADMIN }
         );
 
         res.status(200).json({

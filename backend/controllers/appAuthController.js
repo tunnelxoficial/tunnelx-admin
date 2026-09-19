@@ -17,13 +17,25 @@ const { SECRET_KEY } = require('../middleware/auth');
  * obtido por qualquer pessoa com CPF e senha, sirva de credencial no painel.
  */
 
-// 30 dias: o app e um cliente VPN, nao um internet banking. Exigir login toda
-// semana faria o usuario desistir e deixar o tunel importado manualmente.
-const EXPIRACAO = '30d';
+/*
+ * Dez anos. Na pratica, sessao que nao expira.
+ *
+ * A troca e consciente: ninguem precisa refazer login, e some a friccao de
+ * sessao vencida no meio do uso. O custo e que um token vazado (aparelho
+ * perdido, backup do celular, log de proxy) vale por uma decada, e nao existe
+ * revogacao — o JWT e auto-contido, nao ha lista de tokens invalidados.
+ *
+ * O que ainda protege: /app/connections verifica a assinatura a CADA chamada
+ * (requireActiveSubscription). Entao um token roubado nao rende acesso se a
+ * assinatura for cancelada ou ficar em atraso. Para cortar um cliente na hora:
+ * revogar a senha pelo painel e cancelar a assinatura. Para cortar TODO mundo:
+ * trocar o JWT_SECRET.
+ */
+const EXPIRACAO = '10y';
 
-// O token do primeiro acesso nao navega no app: ele so atravessa a tela de nova
-// senha. Trinta dias para uma credencial que passou por WhatsApp seria uma
-// janela aberta a toa.
+// A do primeiro acesso continua curta, e de proposito: ela nao navega no app,
+// so atravessa a tela de nova senha. Dez anos para uma credencial que passou
+// por WhatsApp seria uma janela aberta a toa.
 const EXPIRACAO_PROVISORIA = '30m';
 
 /**

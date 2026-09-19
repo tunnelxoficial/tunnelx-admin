@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const appAuthController = require('../controllers/appAuthController');
 const appSubscriptionController = require('../controllers/appSubscriptionController');
+const appRegisterController = require('../controllers/appRegisterController');
 const { protectClient, protectClientForPasswordChange, requireActiveSubscription } = require('../middleware/auth');
 
 /**
@@ -18,6 +19,11 @@ const { protectClient, protectClientForPasswordChange, requireActiveSubscription
  *   token + assinatura em dia      -> conexoes (o produto pago)
  */
 router.post('/login', appAuthController.login);
+
+// Auto-cadastro: publico por definicao — quem se cadastra ainda nao tem token.
+// Criar conta nao da acesso a nada; o portao continua sendo a assinatura paga.
+router.post('/register', appRegisterController.register);
+router.get('/register/check-cpf', appRegisterController.checkCpf);
 
 // Unica rota que aceita o token do primeiro acesso - ver middleware/auth.js.
 router.post('/change-password', protectClientForPasswordChange, appAuthController.changePassword);
