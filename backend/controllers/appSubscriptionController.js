@@ -71,7 +71,35 @@ exports.current = async (req, res) => {
 
         const plan = await Plan.findByPk(sub.PlanId);
 
+        /*
+         * Pix parado no meio do caminho: devolve o MESMO QR.
+         *
+         * Quem fecha o app antes de pagar voltava para uma tela sem saida — a
+         * assinatura PENDING bloqueia criar outra, e o QR da primeira tinha se
+         * perdido na resposta que ninguem guardou. Buscando a autorizacao de
+         * volta no Asaas, reabrir o app mostra o mesmo codigo e o pagamento
+         * continua de onde parou.
+         */
+        let pixPendente = null;
+        if (sub.status === 'PENDING' && sub.billing_type === 'PIX' && sub.pix_authorization_id) {
+            try {
+                const a = await asaasService.getPixAuthorization(sub.pix_authorization_id);
+                const qr = a?.immediateQrCode || {};
+                pixPendente = {
+                    authorization_id: sub.pix_authorization_id,
+                    status: a?.status || null,
+                    encoded_image: a?.encodedImage || qr.encodedImage || null,
+                    payload: a?.payload || qr.payload || null,
+                    expiration_date: qr.expirationDate || null
+                };
+            } catch (e) {
+                // Falhar aqui nao pode derrubar a tela de assinatura inteira.
+                console.error('[app/subscription] nao foi possivel reler a autorizacao Pix:', e.message);
+            }
+        }
+
         res.json({
+            pending_pix: pixPendente,
             subscription: {
                 id: sub.id,
                 status: sub.status,
@@ -222,7 +250,35 @@ exports.subscribe = async (req, res) => {
 
         await sub.update({ pix_authorization_id: autorizacao.id });
 
+        /*
+         * O QR vem na RAIZ da resposta — `payload` e `encodedImage` —, e nao
+         * dentro de `immediateQrCode`. Esse objeto so carrega o identificador de
+         * conciliacao e a data de expiracao da primeira cobranca.
+         *
+         * Ler no lugar errado devolvia null nos dois campos: o app nao tinha o
+         * que mostrar, o cliente nao conseguia pagar e a tela ficava girando
+         * para sempre esperando uma confirmacao que nunca viria.
+         *
+         * O fallback para o objeto aninhado fica como rede: se a API mudar de
+         * lugar, continua funcionando.
+         */
         const qr = autorizacao.immediateQrCode || {};
+        const imagem = autorizacao.encodedImage || qr.encodedImage || null;
+        const copiaECola = autorizacao.payload || qr.payload || null;
+
+        if (!imagem && !copiaECola) {
+            // Sem QR o cliente nao tem como pagar. Falhar aqui e melhor que
+            // devolver uma tela de espera eterna — e o log mostra o que veio.
+            console.error(
+                '[app/subscribe] autorizacao Pix sem QR. Campos recebidos:',
+                Object.keys(autorizacao || {}).join(', ')
+            );
+            await sub.destroy();
+            return res.status(502).json({
+                message: 'O Pix foi criado mas o codigo nao veio. Tente de novo ou use cartao.'
+            });
+        }
+
         return res.status(201).json({
             subscription_id: sub.id,
             status: 'PENDING',
@@ -231,9 +287,9 @@ exports.subscribe = async (req, res) => {
             // registra o consentimento do débito recorrente.
             pix: {
                 authorization_id: autorizacao.id,
-                encoded_image: qr.encodedImage || null,
-                payload: qr.payload || null,
-                expiration_date: qr.expirationDate || null
+                encoded_image: imagem,
+                payload: copiaECola,
+                expiration_date: qr.expirationDate || autorizacao.expirationDate || null
             },
             message: 'Pague o Pix e autorize a cobranca recorrente no app do seu banco.'
         });
