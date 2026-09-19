@@ -6,6 +6,7 @@ const Subscription = require('../models/Subscription');
 const asaasService = require('../services/asaasService');
 const { evaluateAccess } = require('../utils/subscriptionAccess');
 const { onlyDigits } = require('../utils/password');
+const { ativar } = require('../services/subscriptionActivation');
 
 /**
  * Assinatura vista pelo aplicativo: escolher plano, pagar e cancelar.
@@ -339,6 +340,67 @@ exports.cancel = async (req, res) => {
     } catch (error) {
         console.error('[app/cancel]', error);
         res.status(500).json({ message: error.message || 'Nao foi possivel cancelar.' });
+    }
+};
+
+/**
+ * "Já paguei": confere no Asaas em vez de só reler o banco.
+ *
+ * O webhook é o caminho normal, mas ele falha de formas reais — não chegar,
+ * chegar sem o vínculo que liga a cobrança à assinatura, ou ser recusado. Sem
+ * este caminho, um webhook perdido deixa o cliente pagando e sem acesso,
+ * dependendo de suporte.
+ *
+ * Aqui a pergunta vai à fonte: o Asaas diz se a autorização está ativa e se a
+ * cobrança foi paga. Se sim, ativa — pela MESMA função que o webhook usa.
+ */
+exports.sync = async (req, res) => {
+    try {
+        const sub = await Subscription.findOne({
+            where: { ClientId: req.client.id },
+            order: [['id', 'DESC']]
+        });
+        if (!sub) return res.status(404).json({ message: 'Voce nao tem assinatura.' });
+
+        if (sub.status === 'ACTIVE') {
+            return res.json({ access: evaluateAccess(sub), changed: false });
+        }
+
+        let pago = false;
+        let detalhe = null;
+
+        if (sub.billing_type === 'PIX' && sub.pix_authorization_id) {
+            const a = await asaasService.getPixAuthorization(sub.pix_authorization_id);
+            detalhe = a?.status || null;
+            // ACTIVE = consentimento dado E primeira cobranca paga. E exatamente
+            // a condicao que libera a recorrencia.
+            pago = a?.status === 'ACTIVE';
+        } else if (sub.billing_type === 'CREDIT_CARD' && sub.asaas_subscription_id) {
+            // No cartao, a assinatura ativa ja indica cobranca aprovada; ainda
+            // assim confirmamos pela cobranca, que e o fato do dinheiro.
+            const pagamentos = await asaasService.listSubscriptionPayments(sub.asaas_subscription_id);
+            const confirmada = (pagamentos || []).find(
+                p => p.status === 'CONFIRMED' || p.status === 'RECEIVED'
+            );
+            detalhe = confirmada?.status || null;
+            pago = !!confirmada;
+            if (confirmada) await sub.update({ last_payment_id: confirmada.id });
+        }
+
+        if (pago) {
+            await ativar(sub);
+            return res.json({ access: evaluateAccess(sub), changed: true });
+        }
+
+        res.json({
+            access: evaluateAccess(sub),
+            changed: false,
+            detail: detalhe,
+            message: 'Ainda nao consta pagamento confirmado. Se voce acabou de pagar, aguarde alguns instantes.'
+        });
+    } catch (error) {
+        console.error('[app/sync]', error);
+        res.status(500).json({ message: error.message || 'Nao foi possivel verificar o pagamento.' });
     }
 };
 

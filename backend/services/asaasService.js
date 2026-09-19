@@ -241,6 +241,17 @@ const asaasService = {
         }
     },
 
+    /** Cobrancas de uma assinatura de cartao — usado na verificacao manual. */
+    async listSubscriptionPayments(subscriptionId) {
+        try {
+            const response = await asaasApi.get(`/subscriptions/${subscriptionId}/payments`);
+            return response.data?.data || [];
+        } catch (error) {
+            logar('listSubscriptionPayments', error);
+            return [];
+        }
+    },
+
     async getPayment(paymentId) {
         try {
             const response = await asaasApi.get(`/payments/${paymentId}`);

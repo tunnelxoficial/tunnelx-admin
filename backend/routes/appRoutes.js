@@ -36,6 +36,8 @@ router.get('/plans', protectClient, appSubscriptionController.listPlans);
 router.get('/subscription', protectClient, appSubscriptionController.current);
 router.post('/subscription', protectClient, appSubscriptionController.subscribe);
 router.post('/subscription/cancel', protectClient, appSubscriptionController.cancel);
+// "Ja paguei": consulta o Asaas direto, sem depender do webhook ter chegado.
+router.post('/subscription/sync', protectClient, appSubscriptionController.sync);
 router.get('/subscription/payment', protectClient, appSubscriptionController.pendingPayment);
 
 // O produto em si. `requireActiveSubscription` e o portao: sem assinatura em

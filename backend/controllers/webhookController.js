@@ -2,6 +2,7 @@ const Connection = require('../models/Connection');
 const Subscription = require('../models/Subscription');
 const Plan = require('../models/Plan');
 const Client = require('../models/Client');
+const { ativar, garantirConexoes } = require('../services/subscriptionActivation');
 
 /**
  * Webhook do Asaas — a única coisa que libera ou corta o acesso pago.
@@ -36,22 +37,62 @@ function fimDoPeriodo(cycle, base = new Date()) {
  * externalReference é o nosso próprio id — é o vínculo mais confiável.
  */
 async function acharAssinatura(payment) {
-    if (payment?.externalReference) {
+    if (!payment) return null;
+
+    // 1. externalReference e o nosso proprio id — o vinculo mais confiavel.
+    //    So existe nas assinaturas de cartao; o Pix Automatico nao aceita o campo.
+    if (payment.externalReference) {
         const porRef = await Subscription.findByPk(Number(payment.externalReference));
         if (porRef) return porRef;
     }
-    if (payment?.subscription) {
+
+    // 2. Assinatura do Asaas (cartao).
+    if (payment.subscription) {
         const porSub = await Subscription.findOne({
             where: { asaas_subscription_id: payment.subscription }
         });
         if (porSub) return porSub;
     }
-    if (payment?.customer) {
+
+    /*
+     * 3. Pix Automatico. A cobranca nasce de uma AUTORIZACAO, e o id dela pode
+     *    vir em campos diferentes conforme o evento. Tentamos todos os nomes
+     *    plausiveis em vez de apostar num — foi exatamente aqui que o vinculo
+     *    falhou e o pagamento ficou orfao ("evento sem destino").
+     */
+    const idAutorizacao = payment.pixAutomaticAuthorizationId
+        || payment.pixAutomaticAuthorization?.id
+        || payment.pixAutomaticAuthorization
+        || payment.authorizationId;
+    if (idAutorizacao && typeof idAutorizacao === 'string') {
+        const porPix = await Subscription.findOne({
+            where: { pix_authorization_id: idAutorizacao }
+        });
+        if (porPix) return porPix;
+    }
+
+    // 4. contractId: mandamos 'TUNNELX-SUB-<id>' ao criar a autorizacao Pix.
+    const contrato = payment.contractId || payment.pixAutomaticAuthorization?.contractId;
+    if (typeof contrato === 'string' && contrato.startsWith('TUNNELX-SUB-')) {
+        const id = Number(contrato.replace('TUNNELX-SUB-', ''));
+        if (Number.isFinite(id)) {
+            const porContrato = await Subscription.findByPk(id);
+            if (porContrato) return porContrato;
+        }
+    }
+
+    // 5. Ultimo recurso: o cliente. `customer` costuma ser string, mas alguns
+    //    eventos mandam o objeto inteiro.
+    const idCliente = typeof payment.customer === 'string'
+        ? payment.customer
+        : payment.customer?.id;
+    if (idCliente) {
         return Subscription.findOne({
-            where: { asaas_customer_id: payment.customer },
+            where: { asaas_customer_id: idCliente },
             order: [['id', 'DESC']]
         });
     }
+
     return null;
 }
 
@@ -128,15 +169,7 @@ const webhookController = {
             // ---- assinatura do aplicativo -----------------------------------
             if (sub) {
                 if (event === 'PAYMENT_CONFIRMED' || event === 'PAYMENT_RECEIVED') {
-                    const plan = await Plan.findByPk(sub.PlanId);
-                    await sub.update({
-                        status: 'ACTIVE',
-                        overdue_since: null,           // pagou: a carência zera
-                        current_period_end: fimDoPeriodo(plan?.cycle),
-                        last_payment_id: payment.id,
-                        last_payment_status: payment.status || 'CONFIRMED'
-                    });
-                    await garantirConexao(sub);
+                    await ativar(sub, payment);
                     return res.status(200).json({ received: true });
                 }
 
@@ -223,7 +256,21 @@ const webhookController = {
 
             // Evento que não é nosso: 200 mesmo assim. Responder erro faria o
             // Asaas reenviar em laço e, depois de tantas falhas, suspender a fila.
+            /*
+             * Chegou um evento que nao conseguimos ligar a nada.
+             *
+             * Imprime a estrutura recebida — sem isto, diagnosticar exige
+             * adivinhar quais campos o Asaas mandou. Sao metadados de cobranca,
+             * nao credenciais.
+             */
             console.warn('[webhook] evento sem destino:', event, payment?.id || '');
+            if (payment) {
+                console.warn('[webhook]   campos da cobranca:', Object.keys(payment).join(', '));
+                console.warn('[webhook]   customer=%s subscription=%s externalReference=%s',
+                    JSON.stringify(payment.customer), JSON.stringify(payment.subscription),
+                    JSON.stringify(payment.externalReference));
+            }
+            console.warn('[webhook]   chaves do corpo:', Object.keys(req.body || {}).join(', '));
             res.status(200).json({ received: true });
         } catch (error) {
             console.error('[webhook] falha ao processar:', error);
