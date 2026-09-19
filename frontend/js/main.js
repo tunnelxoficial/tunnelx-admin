@@ -285,7 +285,17 @@ class Modal {
             document.body.appendChild(container);
         }
 
-        container.innerHTML = `
+        /*
+         * Cada modal e dono do PROPRIO elemento, em vez de todos dividirem o
+         * innerHTML do container.
+         *
+         * Com o container compartilhado, um modal aberto de dentro do onConfirm
+         * de outro era destruido pelo fechamento do primeiro: a senha gerada
+         * aparecia e sumia em ~200ms, que e o tempo da animacao de saida. Agora
+         * fechar remove apenas o proprio no, e o que veio depois sobrevive.
+         */
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = `
             <div class="modal-overlay" role="dialog" aria-modal="true">
                 <div class="modal-content ${size ? 'modal-' + size : ''}">
                     <div class="modal-header">
@@ -303,10 +313,12 @@ class Modal {
             </div>
         `;
 
-        const overlay = container.querySelector('.modal-overlay');
-        const closeBtn = container.querySelector('.close-modal');
-        const cancelBtn = container.querySelector('.modal-cancel');
-        const confirmBtn = container.querySelector('.modal-confirm');
+        container.appendChild(wrapper);
+
+        const overlay = wrapper.querySelector('.modal-overlay');
+        const closeBtn = wrapper.querySelector('.close-modal');
+        const cancelBtn = wrapper.querySelector('.modal-cancel');
+        const confirmBtn = wrapper.querySelector('.modal-confirm');
 
         // A classe .show entra no frame seguinte: aplicada junto com o elemento,
         // o navegador nao tem estado anterior para interpolar e a transicao de
@@ -319,7 +331,8 @@ class Modal {
             fechado = true;
             overlay.classList.remove('show');
             document.removeEventListener('keydown', aoTeclar);
-            setTimeout(() => { container.innerHTML = ''; }, 200);
+            // Remove SO o proprio no, depois da animacao de saida.
+            setTimeout(() => wrapper.remove(), 200);
             if (onClose) onClose(!!confirmado);
         };
 
@@ -353,11 +366,11 @@ class Modal {
         });
 
         // Foco no primeiro campo: o operador sai do clique ja digitando.
-        const primeiro = container.querySelector('.modal-body input:not([type=hidden]):not([disabled]), .modal-body select, .modal-body textarea');
+        const primeiro = wrapper.querySelector('.modal-body input:not([type=hidden]):not([disabled]), .modal-body select, .modal-body textarea');
         if (primeiro) setTimeout(() => primeiro.focus(), 120);
 
-        Masks.bind(container);
-        if (onOpen) onOpen(container.querySelector('.modal-content'));
+        Masks.bind(wrapper);
+        if (onOpen) onOpen(wrapper.querySelector('.modal-content'));
     }
 
     /**

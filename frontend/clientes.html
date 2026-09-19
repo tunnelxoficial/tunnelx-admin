@@ -335,7 +335,11 @@
                         <div>
                             <div style="font-size:.75rem;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;">Senha provisória</div>
                             <div style="display:flex;align-items:center;gap:.6rem;">
-                                <span id="senha-gerada" style="font-family:monospace;font-size:1.4rem;font-weight:700;letter-spacing:.05em;">${senha}</span>
+                                <!-- letter-spacing largo: a senha e ditada por
+                                     telefone, e 8 digitos grudados viram erro de
+                                     leitura. E so espacamento visual — o valor
+                                     copiado continua sem separador. -->
+                                <span id="senha-gerada" style="font-family:monospace;font-size:1.5rem;font-weight:700;letter-spacing:.22em;">${senha}</span>
                                 <button type="button" class="btn btn-sm btn-secondary" onclick="copiarSenha()">
                                     <i class="fa-solid fa-copy"></i> Copiar
                                 </button>

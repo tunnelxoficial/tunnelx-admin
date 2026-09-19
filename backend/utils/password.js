@@ -2,22 +2,26 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 
 /**
- * Senha de acesso do cliente ao aplicativo.
+ * Senha de acesso do cliente ao aplicativo: somente digitos.
  *
- * O alfabeto exclui de proposito 0/O, 1/I/L e 5/S: a senha e gerada aqui, lida
- * em voz alta ou por WhatsApp e digitada num teclado de celular. Ambiguidade
- * visual vira chamado de suporte.
+ * Era 'XXXX-XXXX' com letras. Numerica e mais facil de ditar por telefone, de
+ * mandar por WhatsApp e de digitar — o celular abre o teclado numerico e nao ha
+ * duvida entre maiuscula e minuscula, nem entre O e 0.
+ *
+ * O preco e o espaco de busca: de 30^8 (~6,5 x 10^11) para 10^8 (10^8). Como
+ * /app/login ainda nao tem limite de tentativas (ver docs/ACESSO-APP.md), e o
+ * limite por IP e por CPF que sustenta esse tamanho — ele passou de "bom ter"
+ * para "precisa existir antes de escalar a base".
  */
-const ALFABETO = 'ABCDEFGHJKMNPQRTUVWXYZ23456789';
-const GRUPOS = 2;
-const POR_GRUPO = 4;
+const DIGITOS = 8;
 
 function generatePassword() {
     // randomInt do crypto, e nao Math.random: senha e material de autenticacao.
-    const sortear = () => ALFABETO[crypto.randomInt(0, ALFABETO.length)];
-    return Array.from({ length: GRUPOS }, () =>
-        Array.from({ length: POR_GRUPO }, sortear).join('')
-    ).join('-');
+    // Faixa completa de uma vez, em vez de sortear digito a digito: o proprio
+    // randomInt ja distribui uniformemente, e o padStart garante o comprimento
+    // quando o sorteio cai num numero baixo (ex.: 00412735).
+    const maximo = 10 ** DIGITOS;
+    return String(crypto.randomInt(0, maximo)).padStart(DIGITOS, '0');
 }
 
 async function hashPassword(plain) {

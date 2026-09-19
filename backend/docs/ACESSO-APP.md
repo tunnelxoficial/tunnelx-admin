@@ -60,9 +60,15 @@ SELECT REPLACE(REPLACE(cpf,'.',''),'-','') AS d, COUNT(*)
 
 ## A senha
 
-Gerada no servidor (`crypto.randomInt`), formato `XXXX-XXXX`, alfabeto sem
-`0/O`, `1/I/L` e `5/S` — ela é lida em voz alta ou por WhatsApp e digitada num
-teclado de celular.
+Gerada no servidor (`crypto.randomInt`), **8 dígitos**, sem separador — ex.:
+`69512210`. Numérica porque é ditada por telefone, mandada por WhatsApp e
+digitada num celular: o teclado numérico abre direto e não há dúvida entre
+maiúscula e minúscula, nem entre `O` e `0`.
+
+O custo é o espaço de busca: era `30^8` (~6,5 × 10¹¹) com o alfabeto antigo, e
+agora é `10^8`. Com **8 dígitos e sem limite de tentativas em `/app/login`**
+(pendência 3, abaixo), a força bruta é viável. O rate limit por IP e por CPF
+deixou de ser melhoria e virou requisito antes de a base crescer.
 
 O banco guarda **apenas o hash bcrypt**. Não existe tela de "ver senha" e não é
 esquecimento: a senha em claro trafega uma única vez, na resposta que a gerou.
