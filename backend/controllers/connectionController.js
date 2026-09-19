@@ -2,11 +2,7 @@ const Connection = require('../models/Connection');
 const Client = require('../models/Client');
 const Plan = require('../models/Plan');
 
-// Define associations if not defined elsewhere
-Client.hasMany(Connection, { foreignKey: 'ClientId' });
-Connection.belongsTo(Client, { foreignKey: 'ClientId' });
-Plan.hasMany(Connection, { foreignKey: 'PlanId' });
-Connection.belongsTo(Plan, { foreignKey: 'PlanId' });
+// As associacoes vivem em models/Connection.js — ver a nota la.
 
 exports.getAll = async (req, res) => {
     try {

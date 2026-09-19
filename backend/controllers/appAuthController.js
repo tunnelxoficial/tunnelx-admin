@@ -132,19 +132,21 @@ exports.me = async (req, res) => {
  * nunca de um parametro da requisicao. Nao existe aqui um `?clientId=`: o unico
  * cliente que esta rota enxerga e o dono do token.
  *
+ * Duas origens, uma lista: os tuneis DELE e os que outra pessoa compartilhou com
+ * ele. O segundo caso e o acesso provisionado — familia dividindo o mesmo tunel
+ * dentro do limite do plano do titular.
+ *
  * Conexoes ainda na fila (status_queue = 'WAIT') aparecem na lista sem config: o
  * app precisa mostrar "em preparacao" em vez de omitir a conexao que o cliente
  * acabou de comprar e nao encontra.
  */
 exports.connections = async (req, res) => {
     try {
-        const connections = await Connection.findAll({
-            where: { ClientId: req.client.id },
-            include: [{ model: Plan, attributes: ['name', 'dataLimit'] }],
-            order: [['id', 'DESC']]
-        });
+        const { sharesDoConvidado, contarOcupacao } = require('../services/shareService');
+        const { descreverPrazo, vagasRestantes } = require('../utils/shareRules');
 
-        res.json(connections.map((c) => ({
+        /** Um tunel do jeito que o app desenha o card. */
+        const serializar = (c, extra = {}) => ({
             id: c.id,
             name: c.name,
             status: c.status,
@@ -157,10 +159,72 @@ exports.connections = async (req, res) => {
             ready: c.status_queue === 'CREATED' && !!c.config,
             config: c.config || null,
             qrcode_base64: c.qrcode ? Buffer.from(c.qrcode).toString('base64') : null,
-            updatedAt: c.updatedAt
-        })));
+            updatedAt: c.updatedAt,
+            ...extra
+        });
+
+        const proprias = await Connection.findAll({
+            where: { ClientId: req.client.id },
+            include: [{ model: Plan, attributes: ['name', 'dataLimit'] }],
+            order: [['id', 'DESC']]
+        });
+
+        // Ocupacao junto do card: o botao de compartilhar precisa saber se ainda
+        // ha vaga ANTES de abrir a tela, senao o usuario escolhe o prazo, gera o
+        // convite e so entao descobre que o plano esta cheio.
+        const listaPropria = await Promise.all(proprias.map(async (c) => {
+            const { ativos, ocupadas } = await contarOcupacao(c.id);
+            const total = Math.max(1, Number(c.total_connections) || 1);
+            return serializar(c, {
+                shared: false,
+                owned: true,
+                slots: {
+                    total,
+                    owner: 1,
+                    guests_active: ativos,
+                    free: vagasRestantes(c.total_connections, ocupadas),
+                    // Plano de 1 pessoa nao tem o que compartilhar.
+                    can_share: total > 1
+                }
+            });
+        }));
+
+        /*
+         * Tuneis emprestados: os que ALGUEM compartilhou com este cliente.
+         *
+         * E o mesmo tunel do titular — mesma configuracao, mesma chave — e por
+         * isso o `config` sai daqui igual. O que muda e a origem do direito: nao
+         * e a assinatura de quem pede, e sim um convite aceito e ainda valido.
+         * `sharesDoConvidado` ja varre os vencidos, entao um prazo que expirou
+         * simplesmente some da lista na proxima abertura do app.
+         */
+        const convites = await sharesDoConvidado(req.client.id);
+        const listaCompartilhada = [];
+
+        for (const share of convites) {
+            const c = await Connection.findByPk(share.ConnectionId, {
+                include: [{ model: Plan, attributes: ['name', 'dataLimit'] }]
+            });
+            if (!c) continue;
+
+            const dono = await Client.findByPk(share.OwnerClientId, { attributes: ['name'] });
+
+            listaCompartilhada.push(serializar(c, {
+                shared: true,
+                owned: false,
+                share_id: share.id,
+                owner_name: String(dono?.name || 'Titular').trim().split(/\s+/)[0],
+                duration_label: share.duration_label,
+                expires_at: share.expires_at,
+                expires_text: descreverPrazo(share),
+                // Quem entrou por convite nao administra o tunel de outra pessoa.
+                slots: null
+            }));
+        }
+
+        res.json([...listaPropria, ...listaCompartilhada]);
     } catch (error) {
-        console.error(error);
+        console.error('[app/connections]', error);
         res.status(500).json({ message: 'Erro ao carregar as conexoes.' });
     }
 };

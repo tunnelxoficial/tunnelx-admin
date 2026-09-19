@@ -73,25 +73,24 @@ function protectClientForPasswordChange(req, res, next) {
 /**
  * Portao da assinatura: so passa quem tem acesso liberado.
  *
- * A decisao NAO e tomada aqui - vem de utils/subscriptionAccess, o mesmo lugar
+ * A decisao NAO e tomada aqui - vem de services/accessResolver, o mesmo lugar
  * que responde ao app qual tela mostrar. Duas implementacoes da mesma regra
  * divergem no primeiro ajuste, e divergir aqui significa entregar a chave
  * privada do tunel para quem parou de pagar.
+ *
+ * Passam por aqui DOIS tipos de gente: quem paga a propria assinatura e quem foi
+ * convidado para o tunel de outra pessoa. O convidado nao tem assinatura nenhuma
+ * e mesmo assim entra - quem pagou por ele foi o titular, e o plano dele ja
+ * conta essa pessoa como uma das vagas.
  *
  * Responde 402 com o veredito inteiro: o app usa o campo `state` para escolher
  * entre a tela de planos, o aviso de atraso e a tela de bloqueio.
  */
 async function requireActiveSubscription(req, res, next) {
     try {
-        const Subscription = require('../models/Subscription');
-        const { evaluateAccess } = require('../utils/subscriptionAccess');
+        const { resolveClientAccess } = require('../services/accessResolver');
 
-        const sub = await Subscription.findOne({
-            where: { ClientId: req.client.id },
-            order: [['id', 'DESC']]
-        });
-
-        const acesso = evaluateAccess(sub);
+        const { access: acesso } = await resolveClientAccess(req.client.id);
         if (acesso.allowed) {
             // Segue adiante para a rota poder devolver o aviso de carencia
             // junto com as conexoes.

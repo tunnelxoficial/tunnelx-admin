@@ -1,5 +1,7 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/db');
+const Client = require('./Client');
+const Plan = require('./Plan');
 
 const Connection = sequelize.define('Connection', {
     id: {
@@ -88,5 +90,19 @@ const Connection = sequelize.define('Connection', {
 }, {
     timestamps: true
 });
+
+/*
+ * Associacoes no modelo, e nao num controller.
+ *
+ * Elas moravam em controllers/connectionController.js, e isso quebrava por
+ * ordem de carregamento: quem faz `include: [Plan]` so funciona se aquele
+ * controller do painel tiver sido exigido antes. /app/connections passou a
+ * depender de um arquivo que nao tem nada a ver com ele — e a falha aparece
+ * como "Plan is not associated to Connection", em runtime, so na rota.
+ */
+Connection.belongsTo(Client, { foreignKey: 'ClientId' });
+Client.hasMany(Connection, { foreignKey: 'ClientId' });
+Connection.belongsTo(Plan, { foreignKey: 'PlanId' });
+Plan.hasMany(Connection, { foreignKey: 'PlanId' });
 
 module.exports = Connection;

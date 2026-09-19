@@ -3,6 +3,7 @@ const router = express.Router();
 const appAuthController = require('../controllers/appAuthController');
 const appSubscriptionController = require('../controllers/appSubscriptionController');
 const appRegisterController = require('../controllers/appRegisterController');
+const appShareController = require('../controllers/appShareController');
 const { protectClient, protectClientForPasswordChange, requireActiveSubscription } = require('../middleware/auth');
 
 /**
@@ -42,6 +43,36 @@ router.get('/subscription/payment', protectClient, appSubscriptionController.pen
 
 // O produto em si. `requireActiveSubscription` e o portao: sem assinatura em
 // dia (ou dentro da carencia de 3 dias) a configuracao do tunel nao sai daqui.
+// O convidado tambem passa por aqui — ele nao assina, quem pagou foi o titular.
 router.get('/connections', protectClient, requireActiveSubscription, appAuthController.connections);
+
+/*
+ * Acesso provisionado: o titular empresta o tunel para a familia.
+ *
+ * Duas pontas com exigencias diferentes, e a diferenca e a feature inteira:
+ *
+ *   dono      -> precisa de assinatura em dia. Compartilhar e um direito do
+ *                plano pago; quem esta bloqueado nao pode distribuir acesso
+ *                para contornar o proprio bloqueio.
+ *
+ *   convidado -> NAO precisa de assinatura. E o ponto: ele nao paga nada, e o
+ *                plano do titular ja conta essa pessoa como uma das vagas.
+ */
+router.get('/connections/:id/shares', protectClient, requireActiveSubscription, appShareController.overview);
+router.post('/connections/:id/shares', protectClient, requireActiveSubscription, appShareController.create);
+router.delete('/shares/:shareId', protectClient, requireActiveSubscription, appShareController.revoke);
+
+// Publica: quem escaneou o QR pode ainda nao ter conta, e mandar a pessoa se
+// cadastrar as cegas - sem saber de quem e o convite nem por quanto tempo vale -
+// e pedir cadastro a troco de nada. Devolve so o primeiro nome do titular e o
+// nome do tunel; nunca a configuracao.
+router.get('/share/:token', appShareController.preview);
+
+// Aceitar exige conta (protectClient), mas nao assinatura.
+router.post('/share/:token/accept', protectClient, appShareController.accept);
+
+// Devolver a vaga: so o dono podia cortar, e sem isto o convidado ficaria preso
+// a um tunel alheio na lista ate o prazo vencer.
+router.delete('/share/:shareId/leave', protectClient, appShareController.leave);
 
 module.exports = router;

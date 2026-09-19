@@ -5,6 +5,7 @@ const Connection = require('../models/Connection');
 const Subscription = require('../models/Subscription');
 const asaasService = require('../services/asaasService');
 const { evaluateAccess } = require('../utils/subscriptionAccess');
+const { resolveClientAccess } = require('../services/accessResolver');
 const { onlyDigits } = require('../utils/password');
 const { ativar } = require('../services/subscriptionActivation');
 
@@ -62,12 +63,16 @@ exports.listPlans = async (req, res) => {
 /** Assinatura atual + veredito de acesso, tudo que o app precisa num request. */
 exports.current = async (req, res) => {
     try {
-        const sub = await Subscription.findOne({
-            where: { ClientId: req.client.id },
-            order: [['id', 'DESC']]
-        });
+        /*
+         * O mesmo veredito que o portão de /app/connections usa.
+         *
+         * Antes lia só a assinatura, e isso quebrava o convidado: sem assinatura
+         * própria ele recebia state NONE, o app mostrava a tela de planos e
+         * mandava pagar por um acesso que o titular já pagou — enquanto o portão,
+         * esse sim ciente do convite, deixava ele passar.
+         */
+        const { access: acesso, subscription: sub } = await resolveClientAccess(req.client.id);
 
-        const acesso = evaluateAccess(sub);
         if (!sub) return res.json({ subscription: null, access: acesso });
 
         const plan = await Plan.findByPk(sub.PlanId);

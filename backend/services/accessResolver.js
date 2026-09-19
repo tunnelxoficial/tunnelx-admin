@@ -18,6 +18,11 @@ const { sharesDoConvidado } = require('./shareService');
  *
  * A assinatura vem primeiro: quem paga e também é convidado de alguém deve ver o
  * estado da própria assinatura (atraso, cancelamento), não o do convite.
+ *
+ * Devolve `{ access, subscription }` em dois campos, e não um objeto só: o
+ * `access` vai inteiro para dentro do JSON que o app recebe, e a instância de
+ * Subscription carrega `credit_card_token` e os ids do Asaas. Fundidos, bastava
+ * um `res.json({ access })` para publicar isso na resposta.
  */
 async function resolveClientAccess(clientId) {
     const sub = await Subscription.findOne({
@@ -26,27 +31,31 @@ async function resolveClientAccess(clientId) {
     });
 
     const acesso = evaluateAccess(sub);
-    if (acesso.allowed) return { ...acesso, subscription: sub, asGuest: false };
+    if (acesso.allowed) {
+        return { access: { ...acesso, asGuest: false }, subscription: sub };
+    }
 
     // Sem assinatura válida: ainda pode ser convidado de alguém.
     const convites = await sharesDoConvidado(clientId);
     if (convites.length) {
         return {
-            allowed: true,
-            state: 'GUEST',
-            daysLeft: null,
-            // Só avisa quando o estado da assinatura própria não importa —
-            // quem nunca assinou (NONE) não precisa ver cobrança nenhuma.
-            message: acesso.state === 'NONE' || acesso.state === 'CANCELED'
-                ? null
-                : acesso.message,
-            subscription: sub,
-            asGuest: true,
-            shareCount: convites.length
+            access: {
+                allowed: true,
+                state: 'GUEST',
+                daysLeft: null,
+                // Só avisa quando o estado da assinatura própria não importa —
+                // quem nunca assinou (NONE) não precisa ver cobrança nenhuma.
+                message: acesso.state === 'NONE' || acesso.state === 'CANCELED'
+                    ? null
+                    : acesso.message,
+                asGuest: true,
+                shareCount: convites.length
+            },
+            subscription: sub
         };
     }
 
-    return { ...acesso, subscription: sub, asGuest: false };
+    return { access: { ...acesso, asGuest: false }, subscription: sub };
 }
 
 module.exports = { resolveClientAccess };
