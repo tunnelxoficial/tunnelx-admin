@@ -148,6 +148,20 @@ exports.subscribe = async (req, res) => {
             asaas_customer_id: asaasCustomer.id
         });
 
+        /*
+         * A partir daqui, qualquer falha precisa APAGAR esta linha.
+         *
+         * Uma assinatura PENDING orfa bloqueia a proxima tentativa: a checagem
+         * de "ja tem assinatura em andamento" inclui PENDING, entao um erro no
+         * Asaas (cartao recusado, campo invalido, rede) deixaria o cliente
+         * preso, sem conseguir nem tentar de novo nem cancelar algo que nunca
+         * existiu do outro lado.
+         */
+        const desfazer = async (e) => {
+            try { await sub.destroy(); } catch (_) { /* melhor esforco */ }
+            throw e;
+        };
+
         const remoteIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim()
             || req.socket?.remoteAddress;
 
@@ -168,11 +182,9 @@ exports.subscribe = async (req, res) => {
 
             // Tokeniza primeiro: o número do cartão morre aqui, e o que segue
             // para a assinatura (e para o banco de dados) é só o token.
-            const token = await asaasService.tokenizeCard(
-                asaasCustomer.id,
-                { ...card, remoteIp },
-                holderInfo
-            );
+            const token = await asaasService
+                .tokenizeCard(asaasCustomer.id, { ...card, remoteIp }, holderInfo)
+                .catch(desfazer);
 
             const assinatura = await asaasService.createCardSubscription({
                 customerId: asaasCustomer.id,
@@ -180,7 +192,7 @@ exports.subscribe = async (req, res) => {
                 creditCardToken: token.creditCardToken,
                 externalReference: sub.id,
                 remoteIp
-            });
+            }).catch(desfazer);
 
             await sub.update({
                 asaas_subscription_id: assinatura.id,
@@ -203,8 +215,10 @@ exports.subscribe = async (req, res) => {
         const autorizacao = await asaasService.createPixAuthorization({
             customerId: asaasCustomer.id,
             plan,
-            externalReference: sub.id
-        });
+            // Vira o contractId da autorizacao — o vinculo entre a autorizacao
+            // no Asaas e a assinatura aqui.
+            subscriptionId: sub.id
+        }).catch(desfazer);
 
         await sub.update({ pix_authorization_id: autorizacao.id });
 

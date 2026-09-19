@@ -143,19 +143,56 @@ const asaasService = {
      * emite as cobranças seguintes. Não existe "PIX recorrente" sem essa
      * autorização: o banco do cliente precisa consentir com o débito futuro.
      */
-    async createPixAuthorization({ customerId, plan, externalReference, startDate }) {
+    async createPixAuthorization({ customerId, plan, subscriptionId, startDate }) {
+        const valor = Number(plan.price);
+        // Este texto aparece no app do banco do pagador, na tela de
+        // autorizacao e em cada cobranca. Leva a marca para ele reconhecer de
+        // onde vem o debito.
+        const descricao = descricaoCurta(`TunnelX · ${plan.name}`);
+
         try {
             const response = await asaasApi.post('/pix/automatic/authorizations', {
-                customer: customerId,
-                // SUBSCRIPTION: o Asaas cria as cobranças sozinho. Em MANUAL
-                // seríamos nós, entre 2 e 10 dias úteis antes de cada vencimento.
+                // `customerId`, e nao `customer`: este endpoint usa nome
+                // diferente do resto da API do Asaas.
+                customerId,
+
+                /*
+                 * Identificador do contrato, obrigatorio e limitado a 35
+                 * caracteres. E o que o banco do pagador exibe como "objeto da
+                 * autorizacao" na tela de consentimento.
+                 *
+                 * Usamos o id da nossa assinatura: estavel, unico e curto —
+                 * permite achar a assinatura a partir da autorizacao mesmo se o
+                 * pix_authorization_id se perder.
+                 */
+                contractId: `TUNNELX-SUB-${subscriptionId}`,
+
+                frequency: frequenciaPixDoPlano(plan.cycle),
+                startDate: startDate || hoje(),
+                // sem finishDate: autorizacao por tempo indeterminado
+
+                // SUBSCRIPTION: o Asaas cria as cobrancas sozinho. Em MANUAL
+                // seriamos nos, entre 2 e 10 dias uteis antes de cada vencimento.
+                // Este modo EXIGE `value`.
                 paymentCreationMode: 'SUBSCRIPTION',
-                value: plan.price,
-                frequency: frequenciaDoPlano(plan.cycle),
-                description: `Assinatura Plano ${plan.name}`,
-                externalReference: String(externalReference),
-                startDate: startDate || hoje()
-                // sem finishDate: autorização por tempo indeterminado
+                value: valor,
+                description: descricao,
+
+                /*
+                 * A primeira cobranca vai no proprio pedido de autorizacao.
+                 * E ela que o cliente paga no app do banco, e e esse pagamento
+                 * que registra o consentimento do debito recorrente — sem este
+                 * objeto nao ha o que escanear e a autorizacao nunca ativa.
+                 */
+                immediateQrCode: {
+                    expirationSeconds: 3600, // 1h para pagar; depois e so refazer
+                    originalValue: valor,
+                    description: descricao
+                },
+
+                // Tenta de novo quando a cobranca falha (saldo insuficiente, por
+                // exemplo). Sem isso uma falha unica encerraria a recorrencia.
+                retryPolicy: 'ALLOW_THREE_IN_SEVEN_DAYS'
             });
             return response.data;
         } catch (error) {
@@ -300,15 +337,37 @@ function cicloDoPlano(cycle) {
     return mapa[String(cycle || '').trim().toLowerCase()] || 'MONTHLY';
 }
 
-function frequenciaDoPlano(cycle) {
+/**
+ * Frequencia do Pix Automatico.
+ *
+ * O enum e MENOR que o de assinatura por cartao: WEEKLY, MONTHLY, QUARTERLY,
+ * SEMIANNUALLY e ANNUALLY — NAO existe bimestral. Um plano bimestral cairia num
+ * default silencioso e passaria a cobrar todo mes, ou seja, o dobro do
+ * combinado. Por isso aqui e erro explicito em vez de fallback.
+ */
+function frequenciaPixDoPlano(cycle) {
     const mapa = {
+        semanal: 'WEEKLY',
         mensal: 'MONTHLY',
-        bimestral: 'BIMONTHLY',
         trimestral: 'QUARTERLY',
         semestral: 'SEMIANNUALLY',
         anual: 'ANNUALLY'
     };
-    return mapa[String(cycle || '').trim().toLowerCase()] || 'MONTHLY';
+    const c = String(cycle || '').trim().toLowerCase();
+    const f = mapa[c];
+    if (!f) {
+        throw new Error(
+            `O ciclo "${cycle}" nao e aceito no Pix automatico. ` +
+            'Use cartao de credito neste plano, ou mude o ciclo para mensal, trimestral, semestral ou anual.'
+        );
+    }
+    return f;
+}
+
+/** `description` e `contractId` do Pix Automatico param em 35 caracteres. */
+function descricaoCurta(texto) {
+    const s = String(texto || '').trim();
+    return s.length <= 35 ? s : s.slice(0, 34) + '…';
 }
 
 module.exports = asaasService;
