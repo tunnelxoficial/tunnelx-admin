@@ -226,7 +226,7 @@
                 <button class="btn btn-sm btn-outline-secondary" onclick="copyConfig(${conn.id}, this)" title="Copiar configuração">
                     <i class="fa-regular fa-copy"></i>
                 </button>
-                <button class="btn btn-sm btn-secondary btn-icon" onclick="reprovisionConnection(${conn.id})" title="Regerar config e QR com o endpoint atual">
+                <button class="btn btn-sm btn-secondary btn-icon" onclick="reprovisionConnection(${conn.id}, ${conn.aparelhos || 0})" title="Regerar config e QR com o endpoint atual">
                     <i class="fa-solid fa-rotate"></i>
                 </button>`;
 
@@ -258,21 +258,40 @@
 
             return `<div style="display: flex; gap: 0.5rem; align-items: center;">
                 <span class="badge badge-danger">Não provisionado</span>
-                <button class="btn btn-sm btn-secondary btn-icon" onclick="reprovisionConnection(${conn.id})" title="Enviar para a fila">
+                <button class="btn btn-sm btn-secondary btn-icon" onclick="reprovisionConnection(${conn.id}, ${conn.aparelhos || 0})" title="Enviar para a fila">
                     <i class="fa-solid fa-play"></i>
                 </button>
             </div>`;
         }
 
-        window.reprovisionConnection = (id) => {
+        window.reprovisionConnection = (id, aparelhos) => {
+            /*
+             * Regerar a conexao NAO alcanca os aparelhos do aplicativo: sao
+             * registros separados, com chave e configuracao proprias. Sem este
+             * aviso o operador ve "Provisionado" na tela e o cliente continua
+             * com a configuracao antiga no celular.
+             */
+            const temAparelhos = Number(aparelhos) > 0;
+
+            const aviso = temAparelhos
+                ? '<label style="display:flex;gap:.6rem;align-items:flex-start;margin-top:1rem;' +
+                  'padding:.8rem;border:1px solid var(--border-color);border-radius:.5rem;cursor:pointer">' +
+                  '<input type="checkbox" id="incluirAparelhos" checked style="margin-top:.2rem">' +
+                  '<span>Regerar tambem a configuracao dos <b>' + aparelhos + ' aparelho(s)</b> que usam o ' +
+                  'aplicativo.<br><small style="color:var(--text-muted)">Sem isso, o aplicativo do cliente ' +
+                  'continua com a configuracao antiga. Com isso, ele fica alguns segundos fora do ar e ' +
+                  'busca a nova sozinho.</small></span></label>'
+                : '';
+
             Modal.show({
                 title: 'Regerar configuração',
-                content: '<p>A configuração e o QR atuais serão substituídos por novos, gerados com o endpoint atual do servidor. O cliente precisará importar o novo arquivo. Continuar?</p>',
+                content: '<p>A configuração e o QR atuais serão substituídos por novos, gerados com o endpoint atual do servidor. O cliente precisará importar o novo arquivo. Continuar?</p>' + aviso,
                 confirmText: 'Regerar',
                 type: 'danger',
                 onConfirm: async () => {
                     try {
-                        await Connections.reprovision(id);
+                        const caixa = document.getElementById('incluirAparelhos');
+                        await Connections.reprovision(id, !!(caixa && caixa.checked));
                         refreshTable();
                     } catch (e) {
                         Toast.show('Erro ao reenfileirar: ' + e.message);

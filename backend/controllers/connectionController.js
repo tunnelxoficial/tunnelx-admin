@@ -1,6 +1,7 @@
 const Connection = require('../models/Connection');
 const Client = require('../models/Client');
 const Plan = require('../models/Plan');
+const ConnectionDevice = require('../models/ConnectionDevice');
 
 // As associacoes vivem em models/Connection.js — ver a nota la.
 
@@ -10,7 +11,19 @@ exports.getAll = async (req, res) => {
         // array de inteiros (~5 bytes de JSON por byte). Nenhum dos dois e usado na
         // listagem: a tela busca os dois sob demanda em GET /connections/:id/files.
         const connections = await Connection.findAll({
-            attributes: { exclude: ['config', 'qrcode'] },
+            attributes: {
+                exclude: ['config', 'qrcode'],
+                // Quantos aparelhos do aplicativo dependem desta conexao. Sem este
+                // numero a tela nao tem como avisar que regerar so a conexao deixa
+                // o aplicativo do cliente na configuracao antiga.
+                include: [[
+                    Connection.sequelize.literal(
+                        '(SELECT COUNT(*) FROM ConnectionDevices d ' +
+                        'WHERE d.ConnectionId = Connection.id AND d.revoked_at IS NULL)'
+                    ),
+                    'aparelhos'
+                ]]
+            },
             include: [
                 { model: Client, attributes: ['name', 'email', 'cpf', 'whatsapp'] },
                 { model: Plan, attributes: ['name', 'dataLimit'] }
@@ -194,10 +207,33 @@ exports.reprovision = async (req, res) => {
         // operador sem arquivo nenhum durante o intervalo de 60s do timer.
         await connection.update({ status_queue: 'WAIT' });
 
+        /*
+         * Os aparelhos do aplicativo sao OUTRA tabela, e ficavam de fora.
+         *
+         * Quem usa o aplicativo recebe a configuracao de ConnectionDevices, nao a
+         * da Connection. Regerar so a conexao fazia a tela mostrar "Provisionado"
+         * enquanto o aplicativo do cliente seguia com o arquivo antigo — foi
+         * assim que uma correcao de MTU chegou ao peer antigo e nao chegou ao
+         * aplicativo.
+         *
+         * Continua sendo escolha do operador, porque regerar troca as chaves e
+         * derruba o aparelho por alguns segundos.
+         */
+        let aparelhosReenfileirados = 0;
+
+        if (req.body && req.body.incluirAparelhos) {
+            const [linhas] = await ConnectionDevice.update(
+                { status_queue: 'WAIT', queue_attempts: 0 },
+                { where: { ConnectionId: connection.id, revoked_at: null } }
+            );
+            aparelhosReenfileirados = linhas || 0;
+        }
+
         res.json({
             message: 'Conexão reenviada para a fila de provisionamento.',
             id: connection.id,
-            status_queue: connection.status_queue
+            status_queue: connection.status_queue,
+            aparelhosReenfileirados
         });
     } catch (error) {
         console.error(error);

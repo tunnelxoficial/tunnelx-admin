@@ -78,8 +78,8 @@ const Connections = {
         return await Api.get(`/connections/${id}/files`);
     },
 
-    async reprovision(id) {
-        return await Api.request(`/connections/${id}/reprovision`, 'PATCH');
+    async reprovision(id, incluirAparelhos = false) {
+        return await Api.request(`/connections/${id}/reprovision`, 'PATCH', { incluirAparelhos });
     },
 
     async toggleInternet(id) {
