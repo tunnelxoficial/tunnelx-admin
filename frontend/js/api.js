@@ -78,6 +78,10 @@ const Connections = {
         return await Api.get(`/connections/${id}/files`);
     },
 
+    async setPaymentStatus(id, status) {
+        return await Api.request(`/connections/${id}/payment`, 'PATCH', { status });
+    },
+
     async reprovision(id, incluirAparelhos = false) {
         return await Api.request(`/connections/${id}/reprovision`, 'PATCH', { incluirAparelhos });
     },

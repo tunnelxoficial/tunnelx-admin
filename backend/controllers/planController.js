@@ -59,8 +59,7 @@ const planController = {
     // Create a new plan
     create: async (req, res) => {
         try {
-            const { name, description, cycle, price, dataLimit, total_connections,
-                    product_ids, aplicarNasConexoes } = req.body;
+            const { name, description, cycle, price, dataLimit, total_connections, product_ids } = req.body;
 
             if (!name || !cycle || !price || !dataLimit) {
                 return res.status(400).json({ error: 'Nome, ciclo, valor e pacote de dados são obrigatórios' });
@@ -87,7 +86,8 @@ const planController = {
     update: async (req, res) => {
         try {
             const { id } = req.params;
-            const { name, description, cycle, price, dataLimit, total_connections, product_ids } = req.body;
+            const { name, description, cycle, price, dataLimit, total_connections,
+                    product_ids, aplicarNasConexoes } = req.body;
 
             const plan = await Plan.findByPk(id);
 

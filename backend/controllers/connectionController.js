@@ -2,6 +2,8 @@ const Connection = require('../models/Connection');
 const Client = require('../models/Client');
 const Plan = require('../models/Plan');
 const ConnectionDevice = require('../models/ConnectionDevice');
+const Subscription = require('../models/Subscription');
+const { ativar } = require('../services/subscriptionActivation');
 
 // As associacoes vivem em models/Connection.js — ver a nota la.
 
@@ -194,6 +196,77 @@ exports.getFiles = async (req, res) => {
 // enxerga status_queue = 'WAIT', entao 'CREATED' era um estado terminal: config e
 // qrcode ficavam congelados com o Endpoint vigente no momento da geracao, e a unica
 // saida era apagar a conexao e refazer a venda.
+/**
+ * Muda a situacao de pagamento de uma conexao, pela mao do operador.
+ *
+ * PAID passa pelo mesmo servico de ativacao do webhook, e nao por um caminho
+ * proprio: marcar "pago" sem renovar o periodo e sem garantir a conexao
+ * deixaria o cliente com o selo verde e sem internet — que e justamente o
+ * problema que esta tela deveria resolver.
+ */
+exports.setPaymentStatus = async (req, res) => {
+    const PERMITIDOS = ['PAID', 'WAIT', 'OVERDUE', 'REFUNDED'];
+
+    try {
+        const { status } = req.body || {};
+
+        if (!PERMITIDOS.includes(status)) {
+            return res.status(400).json({
+                message: 'Situacao invalida. Use: ' + PERMITIDOS.join(', ')
+            });
+        }
+
+        const connection = await Connection.findByPk(req.params.id);
+        if (!connection) return res.status(404).json({ message: 'Conexão não encontrada.' });
+
+        const anterior = connection.payment_status;
+        let assinaturaAtivada = false;
+
+        if (status === 'PAID') {
+            /*
+             * Havendo assinatura, quem ativa e o servico compartilhado: ele renova
+             * current_period_end pelo ciclo do plano, zera overdue_since e garante
+             * a conexao. Duplicar essa logica aqui seria criar a segunda verdade.
+             */
+            const sub = connection.asaas_subscription_id
+                ? await Subscription.findOne({
+                    where: { asaas_subscription_id: connection.asaas_subscription_id }
+                })
+                : null;
+
+            if (sub) {
+                await ativar(sub);
+                assinaturaAtivada = true;
+            }
+
+            // Vale tambem sem assinatura: conexao criada a mao, pagamento por fora.
+            await connection.update({ payment_status: 'PAID', status: 'active' });
+        } else {
+            // As demais situacoes so registram o fato. Cortar o acesso e outra
+            // acao, deliberada, pelo botao de bloquear internet — para ninguem
+            // derrubar um cliente sem querer ao corrigir um rotulo.
+            await connection.update({ payment_status: status });
+        }
+
+        console.log(
+            '[pagamento] conexao ' + connection.id + ': ' + (anterior || 'sem cobranca') +
+            ' -> ' + status + ' (manual pelo painel)' +
+            (assinaturaAtivada ? ', assinatura reativada' : '')
+        );
+
+        res.json({
+            message: 'Situação de pagamento atualizada.',
+            id: connection.id,
+            payment_status: status,
+            status: connection.status,
+            assinaturaAtivada
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Erro ao atualizar a situação de pagamento.' });
+    }
+};
+
 exports.reprovision = async (req, res) => {
     try {
         const connection = await Connection.findByPk(req.params.id);

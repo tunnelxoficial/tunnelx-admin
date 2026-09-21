@@ -202,17 +202,60 @@
         });
 
         // Badge do estado de pagamento (payment_status e gravado pelo webhook Asaas)
-        function paymentBadge(v) {
-            const map = {
-                PAID:     ['badge-success', 'Pago'],
-                WAIT:     ['badge-warning', 'Aguardando'],
-                OVERDUE:  ['badge-danger',  'Vencido'],
-                REFUNDED: ['badge-info',    'Estornado']
-            };
-            const m = map[v];
-            return m ? `<span class="badge ${m[0]}">${m[1]}</span>`
-                     : '<span class="badge badge-info">Sem cobrança</span>';
+        const PAGAMENTOS = {
+            PAID:     ['badge-success', 'Pago'],
+            WAIT:     ['badge-warning', 'Aguardando'],
+            OVERDUE:  ['badge-danger',  'Vencido'],
+            REFUNDED: ['badge-info',    'Estornado']
+        };
+
+        /*
+         * O selo e clicavel: o webhook do Asaas pode nao chegar, e o operador
+         * precisa conseguir registrar um pagamento feito por fora sem abrir o
+         * banco. O titulo explica isso a quem passa o mouse.
+         */
+        function paymentBadge(v, id) {
+            const m = PAGAMENTOS[v];
+            const classe = m ? m[0] : 'badge-info';
+            const texto  = m ? m[1] : 'Sem cobrança';
+
+            return `<button class="badge ${classe}" style="border:0;cursor:pointer;font:inherit"
+                            onclick="alterarPagamento(${id}, '${v || ''}')"
+                            title="Alterar a situação de pagamento">${texto}</button>`;
         }
+
+        window.alterarPagamento = (id, atual) => {
+            const opcoes = Object.entries(PAGAMENTOS).map(([chave, [, rotulo]]) =>
+                `<label style="display:flex;gap:.6rem;align-items:center;padding:.6rem .2rem;cursor:pointer">
+                    <input type="radio" name="situacaoPagamento" value="${chave}" ${chave === atual ? 'checked' : ''}>
+                    <span class="badge ${PAGAMENTOS[chave][0]}">${rotulo}</span>
+                 </label>`).join('');
+
+            Modal.show({
+                title: 'Situação de pagamento',
+                content: '<p>Registre aqui um pagamento confirmado por fora, ou corrija a situação quando o webhook do Asaas não chegar.</p>' +
+                         opcoes +
+                         '<p style="margin-top:1rem;font-size:.85rem;color:var(--text-muted)">' +
+                         'Marcar como <b>Pago</b> tambem reativa a assinatura, renova o periodo pelo ciclo do plano ' +
+                         'e garante o tunel. As demais situacoes so registram o fato — para cortar o acesso, use o ' +
+                         'botao de bloquear internet.</p>',
+                confirmText: 'Salvar',
+                onConfirm: async () => {
+                    const escolhido = document.querySelector('input[name="situacaoPagamento"]:checked');
+                    if (!escolhido) return Toast.show('Escolha uma situação.');
+
+                    try {
+                        const r = await Connections.setPaymentStatus(id, escolhido.value);
+                        Toast.show(r.assinaturaAtivada
+                            ? 'Pagamento registrado e assinatura reativada.'
+                            : 'Situação de pagamento atualizada.');
+                        refreshTable();
+                    } catch (e) {
+                        Toast.show('Erro ao atualizar: ' + e.message);
+                    }
+                }
+            });
+        };
 
         // Helper to render Status File column
         function getStatusFileContent(conn) {
@@ -430,7 +473,7 @@
                                 ${conn.status === 'active' ? 'Ativo' : (conn.status === 'payment_pending' ? 'Pendente de pagamento' : 'Inativo')}
                             </span>
                         </td>
-                        <td>${paymentBadge(conn.payment_status)}</td>
+                        <td>${paymentBadge(conn.payment_status, conn.id)}</td>
                         <td class="status-file-cell" data-id="${conn.id}">
                             ${getStatusFileContent(conn)}
                         </td>

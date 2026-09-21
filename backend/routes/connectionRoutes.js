@@ -17,6 +17,8 @@ router.post('/', connectionController.create);
 router.put('/:id', connectionController.update);
 router.delete('/:id', connectionController.delete);
 router.patch('/:id/toggle-internet', connectionController.toggleInternet);
+// Situacao de pagamento pela mao do operador (webhook perdido, pagamento por fora)
+router.patch('/:id/payment', connectionController.setPaymentStatus);
 
 // Dados de conexao sob demanda (config em texto + QR em base64)
 router.get('/:id/files', connectionController.getFiles);
