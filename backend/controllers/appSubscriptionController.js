@@ -71,7 +71,7 @@ exports.current = async (req, res) => {
          * mandava pagar por um acesso que o titular já pagou — enquanto o portão,
          * esse sim ciente do convite, deixava ele passar.
          */
-        const { access: acesso, subscription: sub } = await resolveClientAccess(req.client.id);
+        const { access: acesso, subscription: sub } = await resolveClientAccess(req.client.id, req);
 
         if (!sub) return res.json({ subscription: null, access: acesso });
 

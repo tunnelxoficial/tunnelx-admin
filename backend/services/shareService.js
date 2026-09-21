@@ -27,17 +27,46 @@ const { acessoValido, vagasRestantes } = require('../utils/shareRules');
 async function varrerExpirados(where = {}) {
     const agora = new Date();
 
-    await ConnectionShare.update(
-        { status: 'EXPIRED' },
-        {
-            where: {
-                ...where,
-                status: 'ACTIVE',
-                expires_at: { [Op.ne]: null, [Op.lte]: agora }
-            }
-        }
-    );
+    /*
+     * O prazo do convite tem que cortar o PEER, não só marcar o convite.
+     *
+     * Antes esta função só mudava `status` para EXPIRED. O túnel sumia da lista
+     * do convidado — e era só isso. A linha em ConnectionDevices continuava com
+     * `revoked_at` nulo, e daí saíam duas falhas que se somam:
+     *
+     *   1. O provisionador só remove peers com `revoked_at` preenchido, então o
+     *      peer do ex-convidado NUNCA saía do túnel. Quem tivesse importado o
+     *      .conf no aplicativo oficial do WireGuard seguia navegando de graça,
+     *      indefinidamente. O prazo vendido não existia tecnicamente.
+     *   2. `contarVagas` conta esse device para sempre. Um plano de 8 com
+     *      rotatividade de convidados chegava a zero vagas com o túnel vazio, e
+     *      o titular via "todas as vagas ocupadas" sem ninguém dentro e sem nada
+     *      para remover — o convite expirado nem aparece na lista dele.
+     *
+     * Por isso os ids são capturados ANTES de mudar o status: depois do UPDATE
+     * não há mais como saber quais linhas mudaram nesta passada, e revogar tudo
+     * que está EXPIRED faria trabalho repetido a cada poll de cada aparelho.
+     */
+    const expirados = [];
 
+    const aceitosVencidos = await ConnectionShare.findAll({
+        where: {
+            ...where,
+            status: 'ACTIVE',
+            expires_at: { [Op.ne]: null, [Op.lte]: agora }
+        },
+        attributes: ['id']
+    });
+    expirados.push(...aceitosVencidos.map((s) => s.id));
+
+    if (aceitosVencidos.length) {
+        await ConnectionShare.update(
+            { status: 'EXPIRED' },
+            { where: { id: { [Op.in]: expirados } } }
+        );
+    }
+
+    // Convite que ninguém escaneou: não há aparelho para cortar, só o QR morre.
     await ConnectionShare.update(
         { status: 'EXPIRED' },
         {
@@ -48,6 +77,19 @@ async function varrerExpirados(where = {}) {
             }
         }
     );
+
+    if (expirados.length) {
+        // Import tardio: deviceService também importa daqui, e no topo isto
+        // fecharia um ciclo entre os dois módulos.
+        const { revogarPorShare } = require('./deviceService');
+        for (const id of expirados) {
+            try {
+                await revogarPorShare(id);
+            } catch (e) {
+                console.error('[shareService] falha ao cortar o aparelho do convite', id, e.message);
+            }
+        }
+    }
 }
 
 /**
@@ -69,17 +111,34 @@ async function contarOcupacao(connectionId) {
 }
 
 /**
- * Vagas livres para NOVOS convites (conta pendentes).
+ * Vagas livres para NOVOS convites.
+ *
+ * A conta mudou de unidade: o limite do plano agora é de APARELHOS, não de
+ * convites. Cada pessoa no túnel — o titular inclusive — tem um peer próprio
+ * (ver models/ConnectionDevice.js), e é isso que consome vaga.
+ *
+ * Os convites PENDENTES continuam reservando, porque ainda não viraram
+ * aparelho: sem reservar, o titular geraria 20 QR de um plano de 8 e a recusa
+ * apareceria na cara de quem escaneasse.
+ *
+ * O titular não é mais descontado à parte. Antes ele usava a chave da
+ * Connection e não aparecia em contagem nenhuma, o que obrigava a um `- 1`
+ * espalhado; agora o device dele está em `usados` como o de qualquer outro.
  *
  * @param {object} connection instância de Connection
  */
 async function vagasParaConvite(connection) {
-    const { ativos, pendentes, ocupadas } = await contarOcupacao(connection.id);
+    const { contarVagas } = require('./deviceService');
+    const { pendentes } = await contarOcupacao(connection.id);
+    const { total, usados } = await contarVagas(connection);
+
     return {
-        ativos,
+        // `ativos` = quantos CONVIDADOS estão dentro (o titular não conta aqui,
+        // porque a tela do titular fala de quem ele convidou).
+        ativos: Math.max(0, usados - 1),
         pendentes,
-        total: Math.max(1, Number(connection.total_connections) || 1),
-        livres: vagasRestantes(connection.total_connections, ocupadas)
+        total,
+        livres: Math.max(0, total - usados - pendentes)
     };
 }
 
@@ -89,10 +148,13 @@ async function vagasParaConvite(connection) {
  * Diferente de `vagasParaConvite` de propósito: na hora do aceite, o convite
  * sendo aceito é ele mesmo um dos pendentes. Contá-lo bloquearia o último
  * convidado do plano — o convite ocuparia a vaga que ele veio ocupar.
+ *
+ * Conta aparelhos, pela mesma razão de `vagasParaConvite`.
  */
 async function vagasParaAceite(connection) {
-    const { ativos } = await contarOcupacao(connection.id);
-    return vagasRestantes(connection.total_connections, ativos);
+    const { contarVagas } = require('./deviceService');
+    const { livres } = await contarVagas(connection);
+    return livres;
 }
 
 /** Convites ativos e válidos deste convidado (os túneis emprestados a ele). */

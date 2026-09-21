@@ -44,20 +44,48 @@ const EXPIRACAO_PROVISORIA = '30m';
 /**
  * Busca por CPF comparando apenas digitos.
  *
- * A coluna guarda os dois formatos: cadastros feitos pelo painel vem com a
- * mascara ('064.767.391-66'), e o app manda o que o usuario digitou. Sem
- * normalizar os dois lados, o login falha para o cliente cujo cadastro tem
- * ponto e traco - que hoje sao todos.
+ * A coluna `cpf` guarda os dois formatos: cadastros do painel vem com mascara
+ * (064.767.391-66) e o app manda o que o usuario digitou. Comparar direto
+ * falharia para quem tem ponto e traco — que hoje sao todos.
+ *
+ * A comparacao usa `cpf_digits`, uma coluna computada PERSISTIDA com
+ * exatamente a mesma expressao (ver scripts/add_indexes.js), e indexada.
+ *
+ * Antes o REPLACE ficava no WHERE, o que torna a consulta nao-sargavel: o
+ * SQL Server precisa calcular a funcao linha a linha antes de comparar, entao
+ * cada tentativa de login varria a tabela Clients inteira. Numa rota publica,
+ * sem autenticacao e antes do rate limit existir, isso era tambem o jeito mais
+ * barato de derrubar o banco de fora.
+ *
+ * Se a coluna ainda nao existir (migracao nao rodada), cai no caminho antigo:
+ * lento, mas correto — melhor que a API recusar todo login.
  */
+let temCpfDigits = null; // null = ainda nao verificado
+
+async function colunaCpfDigitsExiste() {
+    if (temCpfDigits !== null) return temCpfDigits;
+    try {
+        const [r] = await sequelize.query(
+            "SELECT COUNT(*) AS total FROM sys.columns" +
+            " WHERE object_id = OBJECT_ID('Clients') AND name = 'cpf_digits'"
+        );
+        temCpfDigits = (r[0]?.total || 0) > 0;
+    } catch {
+        temCpfDigits = false;
+    }
+    return temCpfDigits;
+}
+
 async function acharPorCpf(cpf) {
     const digitos = onlyDigits(cpf);
     if (digitos.length !== 11) return null;
 
-    const [linhas] = await sequelize.query(
-        "SELECT TOP 1 id FROM Clients" +
-        " WHERE REPLACE(REPLACE(REPLACE(cpf, '.', ''), '-', ''), ' ', '') = :digitos",
-        { replacements: { digitos } }
-    );
+    const sql = (await colunaCpfDigitsExiste())
+        ? 'SELECT TOP 1 id FROM Clients WHERE cpf_digits = :digitos'
+        : "SELECT TOP 1 id FROM Clients" +
+          " WHERE REPLACE(REPLACE(REPLACE(cpf, '.', ''), '-', ''), ' ', '') = :digitos";
+
+    const [linhas] = await sequelize.query(sql, { replacements: { digitos } });
     if (!linhas[0]) return null;
 
     return Client.scope('withPassword').findByPk(linhas[0].id);
@@ -203,10 +231,28 @@ exports.me = async (req, res) => {
  * Um 402 aqui NAO e erro: e a resposta certa quando o acesso acabou. O app trata
  * isso removendo os tuneis da conta e derrubando a VPN.
  */
+/**
+ * Convites válidos deste cliente, reaproveitando o que o portão já buscou.
+ *
+ * `requireActiveSubscription` roda antes de toda rota daqui e já consultou os
+ * convites para decidir se a requisição passa. Buscá-los de novo custava 2
+ * UPDATEs + 1 SELECT por requisição, num endpoint que cada aparelho consulta a
+ * cada 30 segundos — e o resultado era idêntico, milissegundos depois.
+ *
+ * `shares: null` significa "o portão não olhou" (o cliente passou pela própria
+ * assinatura), e aí sim vale consultar: ele pode ser titular E convidado.
+ */
+async function convitesDoCliente(req) {
+    const { sharesDoConvidado } = require('../services/shareService');
+    const cache = req.__acesso && req.__acesso.resultado;
+
+    if (cache && Array.isArray(cache.shares)) return cache.shares;
+    return sharesDoConvidado(req.client.id);
+}
 exports.connectionsState = async (req, res) => {
     try {
         const crypto = require('crypto');
-        const { sharesDoConvidado } = require('../services/shareService');
+        const { deviceDoCliente, devicePronto } = require('../services/deviceService');
 
         const proprias = await Connection.findAll({
             where: { ClientId: req.client.id },
@@ -214,24 +260,43 @@ exports.connectionsState = async (req, res) => {
             order: [['id', 'DESC']]
         });
 
-        const itens = proprias.map((c) => ({
-            id: c.id,
-            shared: false,
-            ready: c.status_queue === 'CREATED',
-            status: c.status,
-            updatedAt: c.updatedAt,
-            expires_at: null
-        }));
+        /*
+         * `ready` olha o APARELHO, nao a Connection.
+         *
+         * O app usa este campo para decidir se ja pode baixar a configuracao. A
+         * Connection pode estar CREATED ha meses enquanto o peer deste aparelho
+         * acabou de entrar na fila; dizer "pronto" nesse momento faria o app
+         * buscar um .conf que ainda nao existe.
+         *
+         * `garantirDevice` NAO e chamado aqui de proposito: esta rota e o polling
+         * de 30 segundos de cada aparelho, e criar linha em rota de leitura tao
+         * quente e pedir escrita desnecessaria no banco. Quem cria e
+         * /app/connections, que o app chama logo em seguida.
+         */
+        const itens = [];
 
-        for (const share of await sharesDoConvidado(req.client.id)) {
+        for (const c of proprias) {
+            const device = await deviceDoCliente(c.id, req.client.id);
+            itens.push({
+                id: c.id,
+                shared: false,
+                ready: devicePronto(device),
+                status: c.status,
+                updatedAt: c.updatedAt,
+                expires_at: null
+            });
+        }
+
+        for (const share of await convitesDoCliente(req)) {
             const c = await Connection.findByPk(share.ConnectionId, {
                 attributes: ['id', 'status', 'status_queue', 'updatedAt']
             });
             if (!c) continue;
+            const device = await deviceDoCliente(c.id, req.client.id);
             itens.push({
                 id: c.id,
                 shared: true,
-                ready: c.status_queue === 'CREATED',
+                ready: devicePronto(device),
                 status: c.status,
                 updatedAt: c.updatedAt,
                 expires_at: share.expires_at
@@ -256,26 +321,41 @@ exports.connectionsState = async (req, res) => {
 
 exports.connections = async (req, res) => {
     try {
-        const { sharesDoConvidado, contarOcupacao } = require('../services/shareService');
-        const { descreverPrazo, vagasRestantes } = require('../utils/shareRules');
+        const { descreverPrazo } = require('../utils/shareRules');
+        const { garantirDevice, contarVagas, devicePronto } = require('../services/deviceService');
 
-        /** Um tunel do jeito que o app desenha o card. */
-        const serializar = (c, extra = {}) => ({
-            id: c.id,
-            name: c.name,
-            status: c.status,
-            status_queue: c.status_queue,
-            internet: c.internet,
-            data_limit: c.data_limit,
-            total_connections: c.total_connections,
-            plan: c.Plan ? { name: c.Plan.name, dataLimit: c.Plan.dataLimit } : null,
-            // pronta = worker ja gerou o par de chaves e o Endpoint atual
-            ready: c.status_queue === 'CREATED' && !!c.config,
-            config: c.config || null,
-            qrcode_base64: c.qrcode ? Buffer.from(c.qrcode).toString('base64') : null,
-            updatedAt: c.updatedAt,
-            ...extra
-        });
+        /**
+         * Um tunel do jeito que o app desenha o card.
+         *
+         * O `config` entregue e o DO APARELHO deste cliente, nunca mais o da
+         * Connection. Era o mesmo arquivo para as N pessoas do plano, e o
+         * WireGuard guarda um unico endpoint por peer: os aparelhos se
+         * derrubavam em rodizio. Ver models/ConnectionDevice.js.
+         *
+         * Aparelho ainda na fila devolve `ready: false`, e o app mostra "em
+         * preparacao" — o mesmo tratamento que ja existia para a conexao
+         * recem-comprada.
+         */
+        const serializar = (c, device, extra = {}) => {
+            const pronto = devicePronto(device);
+            return {
+                id: c.id,
+                name: c.name,
+                status: c.status,
+                status_queue: pronto ? 'CREATED' : (device ? device.status_queue : c.status_queue),
+                internet: c.internet,
+                data_limit: c.data_limit,
+                total_connections: c.total_connections,
+                plan: c.Plan ? { name: c.Plan.name, dataLimit: c.Plan.dataLimit } : null,
+                ready: pronto,
+                config: pronto ? device.config : null,
+                qrcode_base64: pronto && device.qrcode ? Buffer.from(device.qrcode).toString('base64') : null,
+                device_id: device ? device.id : null,
+                device_address: device ? device.address : null,
+                updatedAt: c.updatedAt,
+                ...extra
+            };
+        };
 
         const proprias = await Connection.findAll({
             where: { ClientId: req.client.id },
@@ -283,22 +363,35 @@ exports.connections = async (req, res) => {
             order: [['id', 'DESC']]
         });
 
-        // Ocupacao junto do card: o botao de compartilhar precisa saber se ainda
-        // ha vaga ANTES de abrir a tela, senao o usuario escolhe o prazo, gera o
-        // convite e so entao descobre que o plano esta cheio.
+        /*
+         * Cada tunel proprio garante o aparelho DESTE cliente.
+         *
+         * E aqui que o peer do titular nasce: ele abre o app e o device entra na
+         * fila do provisionador. Idempotente — a chave e (conexao, cliente) com
+         * indice unico, entao reabrir o app nao cria um segundo peer.
+         */
         const listaPropria = await Promise.all(proprias.map(async (c) => {
-            const { ativos, ocupadas } = await contarOcupacao(c.id);
-            const total = Math.max(1, Number(c.total_connections) || 1);
-            return serializar(c, {
+            const { device } = await garantirDevice({
+                connectionId: c.id,
+                clientId: req.client.id
+            });
+
+            const vagas = await contarVagas(c);
+
+            return serializar(c, device, {
                 shared: false,
                 owned: true,
                 slots: {
-                    total,
-                    owner: 1,
-                    guests_active: ativos,
-                    free: vagasRestantes(c.total_connections, ocupadas),
+                    total: vagas.total,
+                    // O titular ocupa um aparelho como qualquer outro e ja esta
+                    // dentro de `used`. No modelo antigo ele usava a chave da
+                    // Connection e ficava fora da conta, o que obrigava a um
+                    // desconto manual facil de esquecer.
+                    used: vagas.usados,
+                    guests_active: Math.max(0, vagas.usados - 1),
+                    free: vagas.livres,
                     // Plano de 1 pessoa nao tem o que compartilhar.
-                    can_share: total > 1
+                    can_share: vagas.total > 1
                 }
             });
         }));
@@ -306,13 +399,15 @@ exports.connections = async (req, res) => {
         /*
          * Tuneis emprestados: os que ALGUEM compartilhou com este cliente.
          *
-         * E o mesmo tunel do titular — mesma configuracao, mesma chave — e por
-         * isso o `config` sai daqui igual. O que muda e a origem do direito: nao
-         * e a assinatura de quem pede, e sim um convite aceito e ainda valido.
+         * E o mesmo TUNEL do titular, mas NAO a mesma chave: o convidado tem o
+         * proprio peer, com par de chaves e /32 dele. Era exatamente o contrario
+         * antes — o mesmo .conf ia para todo mundo, e como o WireGuard guarda um
+         * unico endpoint por peer, cada aparelho derrubava o anterior.
+         *
          * `sharesDoConvidado` ja varre os vencidos, entao um prazo que expirou
          * simplesmente some da lista na proxima abertura do app.
          */
-        const convites = await sharesDoConvidado(req.client.id);
+        const convites = await convitesDoCliente(req);
         const listaCompartilhada = [];
 
         for (const share of convites) {
@@ -323,7 +418,16 @@ exports.connections = async (req, res) => {
 
             const dono = await Client.findByPk(share.OwnerClientId, { attributes: ['name'] });
 
-            listaCompartilhada.push(serializar(c, {
+            // O aparelho do convidado nasce aqui se ainda nao existir — o aceite
+            // do convite ja o cria, mas um convite aceito antes desta mudanca nao
+            // tem device nenhum, e sem isto o convidado ficaria sem config.
+            const { device } = await garantirDevice({
+                connectionId: c.id,
+                clientId: req.client.id,
+                shareId: share.id
+            });
+
+            listaCompartilhada.push(serializar(c, device, {
                 shared: true,
                 owned: false,
                 share_id: share.id,

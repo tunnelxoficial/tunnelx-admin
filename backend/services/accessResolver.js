@@ -24,7 +24,34 @@ const { sharesDoConvidado } = require('./shareService');
  * Subscription carrega `credit_card_token` e os ids do Asaas. Fundidos, bastava
  * um `res.json({ access })` para publicar isso na resposta.
  */
-async function resolveClientAccess(clientId) {
+/**
+ * Veredito de acesso, calculado UMA vez por requisição.
+ *
+ * O middleware chama isto para decidir se a requisição passa, e o controller
+ * logo em seguida precisa dos mesmos convites para montar a resposta. Sem o
+ * cache, a mesma conta era feita duas vezes no mesmo request — 2 UPDATEs + 1
+ * SELECT, repetidos, para um resultado idêntico calculado milissegundos
+ * depois. Num endpoint que TODO aparelho consulta a cada 30 segundos, isso é
+ * metade das idas ao banco jogada fora.
+ *
+ * O cache vive no objeto da requisição: nasce e morre com ela. Não há como
+ * servir o veredito de um cliente para outro, nem segurar dado velho entre
+ * requisições.
+ *
+ * @param {number} clientId
+ * @param {object} [req] a requisição, quando houver — é o que habilita o cache
+ */
+async function resolveClientAccess(clientId, req = null) {
+    if (req && req.__acesso && req.__acesso.clientId === clientId) {
+        return req.__acesso.resultado;
+    }
+
+    const resultado = await calcularAcesso(clientId);
+    if (req) req.__acesso = { clientId, resultado };
+    return resultado;
+}
+
+async function calcularAcesso(clientId) {
     const sub = await Subscription.findOne({
         where: { ClientId: clientId },
         order: [['id', 'DESC']]
@@ -32,7 +59,13 @@ async function resolveClientAccess(clientId) {
 
     const acesso = evaluateAccess(sub);
     if (acesso.allowed) {
-        return { access: { ...acesso, asGuest: false }, subscription: sub };
+        /*
+         * `shares: null` e não `[]`: quem tem assinatura própria pode AINDA
+         * assim ser convidado de alguém, e aqui nós simplesmente não olhamos.
+         * Nulo diz "não consultado"; lista vazia diria "não existem", e o
+         * controller esconderia túneis que a pessoa tem direito de ver.
+         */
+        return { access: { ...acesso, asGuest: false }, subscription: sub, shares: null };
     }
 
     // Sem assinatura válida: ainda pode ser convidado de alguém.
@@ -51,11 +84,14 @@ async function resolveClientAccess(clientId) {
                 asGuest: true,
                 shareCount: convites.length
             },
-            subscription: sub
+            subscription: sub,
+            // Os convites já carregados viajam junto: o controller monta a lista
+            // de túneis emprestados a partir daqui, sem repetir a consulta.
+            shares: convites
         };
     }
 
-    return { access: { ...acesso, asGuest: false }, subscription: sub };
+    return { access: { ...acesso, asGuest: false }, subscription: sub, shares: convites };
 }
 
 module.exports = { resolveClientAccess };

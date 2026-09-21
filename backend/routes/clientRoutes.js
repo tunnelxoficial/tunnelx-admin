@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const clientController = require('../controllers/clientController');
-const { protectAdmin } = require('../middleware/auth');
 
 router.get('/', clientController.getAll);
 router.post('/', clientController.create);
@@ -20,7 +19,8 @@ router.delete('/:id', clientController.delete);
  * de 1 dia sem renovacao: fecha-las agora derrubaria o operador com sessao antiga
  * no meio do expediente. Isso continua pendente - ver docs/ACESSO-APP.md.
  */
-router.post('/:id/password', protectAdmin, clientController.setPassword);
-router.delete('/:id/password', protectAdmin, clientController.revokePassword);
+// O token de admin ja foi exigido no ponto de montagem (index.js).
+router.post('/:id/password', clientController.setPassword);
+router.delete('/:id/password', clientController.revokePassword);
 
 module.exports = router;

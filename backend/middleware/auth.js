@@ -1,6 +1,27 @@
 const jwt = require('jsonwebtoken');
 
-const SECRET_KEY = process.env.JWT_SECRET || 'tunnelx_super_secret_key';
+/*
+ * O segredo vem do ambiente, e so de la.
+ *
+ * Antes havia um valor padrao aqui no codigo. Um padrao em segredo de
+ * assinatura nao e conveniencia, e uma porta: o valor esta no repositorio,
+ * e se a variavel faltasse no servidor — um deploy novo, um .env esquecido —
+ * a API subiria normalmente assinando tokens com um segredo publico. Qualquer
+ * pessoa com o codigo forjaria um token de admin.
+ *
+ * Falhar no boot e o comportamento certo: um servidor que nao sobe e um
+ * incidente de dez minutos; um servidor que sobe inseguro e um incidente que
+ * ninguem percebe.
+ */
+const SECRET_KEY = process.env.JWT_SECRET;
+
+if (!SECRET_KEY || SECRET_KEY.length < 32) {
+    throw new Error(
+        !SECRET_KEY
+            ? 'JWT_SECRET ausente. Defina-a no ambiente antes de subir a API.'
+            : 'JWT_SECRET curta demais (minimo 32 caracteres).'
+    );
+}
 
 /**
  * Dois publicos, um segredo, duas portas.
@@ -136,7 +157,9 @@ async function requireActiveSubscription(req, res, next) {
     try {
         const { resolveClientAccess } = require('../services/accessResolver');
 
-        const { access: acesso } = await resolveClientAccess(req.client.id);
+        // `req` habilita o cache por requisicao: o controller adiante pede o
+        // mesmo veredito e recebe este, sem tocar no banco de novo.
+        const { access: acesso } = await resolveClientAccess(req.client.id, req);
         if (acesso.allowed) {
             // Segue adiante para a rota poder devolver o aviso de carencia
             // junto com as conexoes.

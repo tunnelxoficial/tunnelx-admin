@@ -95,7 +95,8 @@ exports.overview = async (req, res) => {
             connection: { id: conexao.id, name: conexao.name },
             slots: {
                 total: vagas.total,
-                // O dono ocupa uma vaga do plano — ele também usa o túnel.
+                // O dono ocupa uma vaga do plano — ele também usa o túnel, e
+                // agora com um peer próprio, contado como os demais.
                 owner: 1,
                 guests_active: vagas.ativos,
                 invites_pending: vagas.pendentes,
@@ -183,6 +184,22 @@ exports.revoke = async (req, res) => {
         }
 
         await share.update({ status: 'REVOKED', revoked_at: new Date() });
+
+        /*
+         * Corta tambem o APARELHO, e nao so o convite.
+         *
+         * O peer do convidado continua vivo no servidor WireGuard ate o
+         * provisionador remove-lo. Marcar so o convite deixaria o peer de pe: o
+         * convidado removido seguiria navegando, e o titular teria uma vaga
+         * ocupada por alguem que ele achou que tinha tirado.
+         */
+        try {
+            const { revogarPorShare } = require('../services/deviceService');
+            const cortados = await revogarPorShare(share.id);
+            if (cortados) console.log(`[app/shares/revoke] ${cortados} aparelho(s) na fila de remocao`);
+        } catch (e) {
+            console.error('[app/shares/revoke] falha ao cortar o aparelho:', e.message);
+        }
 
         res.json({
             message: share.accepted_at ? 'Acesso removido.' : 'Convite cancelado.',
@@ -316,6 +333,30 @@ exports.accept = async (req, res) => {
 
         const dono = await Client.findByPk(share.OwnerClientId, { attributes: ['name'] });
 
+        /*
+         * O aparelho do convidado nasce aqui.
+         *
+         * E o momento certo: o convite acabou de ser aceito, a vaga ja foi
+         * conferida, e o peer entra na fila enquanto a pessoa ainda esta na tela.
+         * Quando ela chegar na lista de tuneis, a configuracao provavelmente ja
+         * existe.
+         *
+         * Antes daqui o convidado recebia o .conf DO TITULAR — mesma chave, mesmo
+         * /32 — e os dois aparelhos passavam a disputar o unico endpoint do peer.
+         */
+        try {
+            const { garantirDevice } = require('../services/deviceService');
+            await garantirDevice({
+                connectionId: conexao.id,
+                clientId: req.client.id,
+                shareId: share.id
+            });
+        } catch (e) {
+            // Falhar aqui nao pode desfazer o aceite: /app/connections garante o
+            // device de novo na primeira listagem.
+            console.error('[app/shares/accept] nao foi possivel criar o aparelho:', e.message);
+        }
+
         res.json({
             message: 'Acesso liberado.',
             share: {
@@ -347,6 +388,16 @@ exports.leave = async (req, res) => {
         if (!share) return res.status(404).json({ message: 'Acesso nao encontrado.' });
 
         await share.update({ status: 'REVOKED', revoked_at: new Date() });
+
+        // Mesma razao do revoke: sem cortar o aparelho, o peer fica vivo no
+        // servidor e a vaga do titular continua ocupada.
+        try {
+            const { revogarPorShare } = require('../services/deviceService');
+            await revogarPorShare(share.id);
+        } catch (e) {
+            console.error('[app/shares/leave] falha ao cortar o aparelho:', e.message);
+        }
+
         res.json({ message: 'Voce saiu deste tunel.' });
     } catch (error) {
         console.error('[app/shares/leave]', error);

@@ -52,8 +52,21 @@ const Connection = sequelize.define('Connection', {
         type: DataTypes.BLOB, // Imagem
         allowNull: true
     },
+    /**
+     * Estado na fila de provisionamento.
+     *
+     *   WAIT        aguardando o provisionador
+     *   PROCESSING  reivindicada por uma instancia (claim atomico)
+     *   CREATED     peer criado e config gravada
+     *   FAILED      falhou 5 vezes; para de girar ate alguem olhar
+     *
+     * PROCESSING e FAILED nasceram com o claim atomico. Sem o estado
+     * intermediario, duas instancias liam a mesma linha e provisionavam o
+     * mesmo cliente duas vezes; sem FAILED, um erro permanente voltava para
+     * a fila a cada 60 segundos e escondia as linhas boas atras dele.
+     */
     status_queue: {
-        type: DataTypes.ENUM('WAIT', 'CREATED'),
+        type: DataTypes.ENUM('WAIT', 'PROCESSING', 'CREATED', 'FAILED'),
         defaultValue: 'WAIT'
     },
     ClientId: {

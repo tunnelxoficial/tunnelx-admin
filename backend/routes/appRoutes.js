@@ -5,6 +5,7 @@ const appSubscriptionController = require('../controllers/appSubscriptionControl
 const appRegisterController = require('../controllers/appRegisterController');
 const appShareController = require('../controllers/appShareController');
 const { protectClient, protectClientForPasswordChange, requireActiveSubscription } = require('../middleware/auth');
+const { limitarLogin, limitarCadastro, limitarConsulta } = require('../middleware/rateLimit');
 
 /**
  * Superficie do aplicativo do cliente.
@@ -19,12 +20,19 @@ const { protectClient, protectClientForPasswordChange, requireActiveSubscription
  *   token de cliente               -> trocar senha, ver/assinar plano
  *   token + assinatura em dia      -> conexoes (o produto pago)
  */
-router.post('/login', appAuthController.login);
+/*
+ * O limitador vem ANTES do controller de proposito.
+ *
+ * A senha do cliente tem 8 digitos numericos: 10^8 combinacoes. Sem teto de
+ * tentativas, varrer esse espaco para um CPF conhecido e questao de dias.
+ * E cada tentativa hoje custa uma varredura completa da tabela Clients.
+ */
+router.post('/login', limitarLogin, appAuthController.login);
 
 // Auto-cadastro: publico por definicao — quem se cadastra ainda nao tem token.
 // Criar conta nao da acesso a nada; o portao continua sendo a assinatura paga.
-router.post('/register', appRegisterController.register);
-router.get('/register/check-cpf', appRegisterController.checkCpf);
+router.post('/register', limitarCadastro, appRegisterController.register);
+router.get('/register/check-cpf', limitarConsulta, appRegisterController.checkCpf);
 
 // Unica rota que aceita o token do primeiro acesso - ver middleware/auth.js.
 router.post('/change-password', protectClientForPasswordChange, appAuthController.changePassword);

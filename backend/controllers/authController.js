@@ -2,7 +2,14 @@ const User = require('../models/Users');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-const SECRET_KEY = process.env.JWT_SECRET || 'tunnelx_super_secret_key';
+/*
+ * O segredo vem de middleware/auth, que e quem o valida no boot.
+ *
+ * Havia aqui uma SEGUNDA copia com fallback hardcoded — e justamente neste
+ * arquivo, que ASSINA os tokens de admin. Duas fontes para o mesmo segredo
+ * significam que exigi-lo num lugar nao garante nada no outro.
+ */
+const { SECRET_KEY } = require('../middleware/auth');
 
 /*
  * Dez anos. Na pratica, sessao que nao expira.
@@ -47,7 +54,20 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const { email, password } = req.body || {};
+
+        /*
+         * Valida antes de tocar no banco.
+         *
+         * Sem isto, um POST sem corpo virava `where: { email: undefined }`, que
+         * o Sequelize rejeita com excecao — a requisicao caia no catch e
+         * respondia 500. Alem do erro errado, era um round-trip ate o banco
+         * (que esta em outra rede) gasto por requisicao malformada, e uma linha
+         * de stack no log para cada varredura automatizada.
+         */
+        if (!email || !password) {
+            return res.status(400).json({ message: 'Informe e-mail e senha.' });
+        }
 
         // Find user
         const user = await User.findOne({ where: { email } });

@@ -28,11 +28,22 @@ const SENHA_MINIMA = 6;
 async function cpfEmUso(cpf) {
     const digitos = onlyDigits(cpf);
     if (!digitos) return null;
-    const [linhas] = await sequelize.query(
-        "SELECT TOP 1 id, name FROM Clients" +
-        " WHERE REPLACE(REPLACE(REPLACE(cpf, '.', ''), '-', ''), ' ', '') = :digitos",
-        { replacements: { digitos } }
-    );
+
+    // Mesma coluna indexada do login — ver a nota em appAuthController.
+    let linhas;
+    try {
+        [linhas] = await sequelize.query(
+            'SELECT TOP 1 id, name FROM Clients WHERE cpf_digits = :digitos',
+            { replacements: { digitos } }
+        );
+    } catch {
+        // Migracao de indices ainda nao rodada neste banco.
+        [linhas] = await sequelize.query(
+            "SELECT TOP 1 id, name FROM Clients" +
+            " WHERE REPLACE(REPLACE(REPLACE(cpf, '.', ''), '-', ''), ' ', '') = :digitos",
+            { replacements: { digitos } }
+        );
+    }
     return linhas[0] || null;
 }
 

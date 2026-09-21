@@ -2,8 +2,15 @@ const express = require('express');
 const router = express.Router();
 const connectionController = require('../controllers/connectionController');
 
-// Middleware to check auth could be added here later
-// const authMiddleware = require('../middleware/auth'); 
+/*
+ * Todas as rotas deste arquivo exigem token de admin.
+ *
+ * A exigencia e feita no ponto de montagem, em index.js — nao aqui. Uma rota
+ * acrescentada abaixo ja nasce protegida.
+ *
+ * Isto nao era verdade ate agora: estas rotas respondiam a qualquer um, e
+ * GET /:id/files entrega a chave privada WireGuard do cliente.
+ */
 
 router.get('/', connectionController.getAll);
 router.post('/', connectionController.create);
