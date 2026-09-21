@@ -4,6 +4,9 @@ const Plan = require('../models/Plan');
 const ConnectionDevice = require('../models/ConnectionDevice');
 const Subscription = require('../models/Subscription');
 const { ativar } = require('../services/subscriptionActivation');
+const { bloquear, liberar, descrever, MOTIVO_OPERADOR } = require('../services/acessoInternet');
+const { evaluateAccess } = require('../utils/subscriptionAccess');
+const { INTERVALO_MS, SEM_ACESSO } = require('../services/vigiaCobranca');
 
 // As associacoes vivem em models/Connection.js — ver a nota la.
 
@@ -149,17 +152,93 @@ exports.delete = async (req, res) => {
     }
 };
 
+/**
+ * Corta ou devolve a internet de uma conexao, pela mao do operador.
+ *
+ * Antes isto era `update({ internet: !connection.internet })` e mais nada. O
+ * campo nao tinha consumidor: o botao pintava o icone de vermelho no painel e o
+ * cliente seguia navegando, porque nenhum processo levava aquele booleano ao
+ * tunel. Era o "nao funciona" relatado.
+ *
+ * Duas mudancas:
+ *
+ * 1. Quem escreve e o servico de acesso, que grava tambem o MOTIVO. Sem motivo,
+ *    a liberacao automatica por pagamento nao teria como distinguir um corte
+ *    deliberado do operador de um corte por inadimplencia — e devolveria a
+ *    internet a quem foi cortado de proposito.
+ *
+ * 2. O corpo pode trazer o estado desejado (`{ internet: false }`) em vez de
+ *    inverter as cegas. Inverter e uma corrida: entre a tela desenhar a linha e
+ *    o operador clicar, o vigia de cobranca pode ter cortado o cliente, e o
+ *    clique que pretendia cortar acabaria liberando. Sem corpo, mantem o
+ *    comportamento antigo — a tela velha continua funcionando.
+ *
+ * O tunel nao e tocado aqui. O provisionador reconcilia o WireGuard com este
+ * campo a cada ciclo (~60 s), e e ele quem tem acesso ao servidor.
+ */
 exports.toggleInternet = async (req, res) => {
     try {
         const { id } = req.params;
         const connection = await Connection.findByPk(id);
-        
+
         if (!connection) {
             return res.status(404).json({ message: 'Conexão não encontrada.' });
         }
 
-        await connection.update({ internet: !connection.internet });
-        res.json(connection);
+        const pedido = req.body && typeof req.body.internet === 'boolean'
+            ? req.body.internet
+            : !connection.internet;
+
+        if (pedido) {
+            // Liberacao pela mao do operador desfaz QUALQUER corte, inclusive o
+            // automatico: e uma decisao consciente, com aviso na tela.
+            await liberar(connection);
+        } else {
+            await bloquear(connection, MOTIVO_OPERADOR);
+        }
+
+        await connection.reload();
+
+        /*
+         * O aviso pergunta a MESMA regra que o vigia usa, e nao ao rotulo.
+         *
+         * Olhar so payment_status errava justamente quem tem assinatura: ali o
+         * vigia decide por evaluateAccess e nunca escreve payment_status, entao
+         * o operador liberava, nao era avisado de nada, e o corte voltava
+         * sozinho minutos depois.
+         */
+        let aviso = null;
+
+        if (pedido) {
+            const sub = await Subscription.findOne({ where: { ClientId: connection.ClientId } });
+
+            const seguiraCortada = sub
+                ? !evaluateAccess(sub).allowed
+                : SEM_ACESSO.has(connection.payment_status);
+
+            if (seguiraCortada) {
+                aviso = 'Pagamento segue em aberto: a verificação de cobrança cortará esta conexão de novo em até ' +
+                        Math.round(INTERVALO_MS / 60000) + ' min.';
+            }
+        }
+
+        /*
+         * Devolve so o que a tela usa.
+         *
+         * O spread de toJSON() mandava a linha INTEIRA — inclusive `config`, que
+         * e o .conf com a chave privada do peer, e o `qrcode` em BLOB. getAll
+         * exclui os dois de proposito; nao faz sentido vaza-los por aqui.
+         */
+        res.json({
+            id: connection.id,
+            internet: connection.internet,
+            internet_block_reason: connection.internet_block_reason,
+            internet_blocked_at: connection.internet_blocked_at,
+            status: connection.status,
+            payment_status: connection.payment_status,
+            acesso: descrever(connection),
+            aviso
+        });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Erro ao alterar status da internet.' });

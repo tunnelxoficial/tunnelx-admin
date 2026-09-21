@@ -1,6 +1,7 @@
 const Connection = require('../models/Connection');
 const Client = require('../models/Client');
 const Plan = require('../models/Plan');
+const { liberar, MOTIVO_INADIMPLENCIA } = require('./acessoInternet');
 
 /**
  * Ativar assinatura e criar as conexões — num lugar só.
@@ -66,6 +67,19 @@ async function garantirConexoes(sub) {
                 mudancas.total_connections = plan.total_connections;
             }
             if (Object.keys(mudancas).length) await c.update(mudancas);
+
+            /*
+             * Devolve a internet no tunel, e nao so o rotulo no banco.
+             *
+             * Antes esta funcao mexia em status e payment_status e parava ai. Se
+             * o cliente tivesse sido cortado por falta de pagamento, pagar
+             * deixava a linha bonita no painel e o peer continuava fora do
+             * tunel: cliente pago, sem internet, ate alguem reparar na mao.
+             *
+             * somenteSeMotivo garante que o pagamento NAO desfaz um corte que o
+             * operador fez de proposito — esse so a mao dele desfaz.
+             */
+            await liberar(c, { somenteSeMotivo: MOTIVO_INADIMPLENCIA });
         }
         return existentes;
     }
@@ -105,10 +119,20 @@ async function garantirConexoes(sub) {
 async function ativar(sub, pagamento = null) {
     const plan = await Plan.findByPk(sub.PlanId);
 
+    /*
+     * O MESMO pagamento nao pode esticar o periodo duas vezes.
+     *
+     * No cartao, o Asaas manda PAYMENT_CONFIRMED e depois PAYMENT_RECEIVED para
+     * a mesma cobranca, separados pelo prazo de liquidacao. Como o periodo era
+     * recontado a partir de AGORA em toda chamada, o cliente ganhava dois ciclos
+     * por um pagamento so.
+     */
+    const jaContabilizado = pagamento?.id && sub.last_payment_id === pagamento.id;
+
     await sub.update({
         status: 'ACTIVE',
         overdue_since: null, // pagou: a carência zera
-        current_period_end: fimDoPeriodo(plan?.cycle),
+        ...(jaContabilizado ? {} : { current_period_end: fimDoPeriodo(plan?.cycle) }),
         ...(pagamento?.id ? { last_payment_id: pagamento.id } : {}),
         ...(pagamento?.status ? { last_payment_status: pagamento.status } : {})
     });

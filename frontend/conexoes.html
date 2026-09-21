@@ -235,10 +235,10 @@
                 title: 'Situação de pagamento',
                 content: '<p>Registre aqui um pagamento confirmado por fora, ou corrija a situação quando o webhook do Asaas não chegar.</p>' +
                          opcoes +
-                         '<p style="margin-top:1rem;font-size:.85rem;color:var(--text-muted)">' +
+                         '<p style="margin-top:1rem;font-size:.85rem;color:var(--text-light)">' +
                          'Marcar como <b>Pago</b> tambem reativa a assinatura, renova o periodo pelo ciclo do plano ' +
-                         'e garante o tunel. As demais situacoes so registram o fato — para cortar o acesso, use o ' +
-                         'botao de bloquear internet.</p>',
+                         'e garante o tunel, devolvendo a internet de quem estava cortado por falta de pagamento. ' +
+                         'Marcar como <b>Vencido</b> corta o acesso na proxima verificacao de cobranca.</p>',
                 confirmText: 'Salvar',
                 onConfirm: async () => {
                     const escolhido = document.querySelector('input[name="situacaoPagamento"]:checked');
@@ -321,7 +321,7 @@
                   'padding:.8rem;border:1px solid var(--border-color);border-radius:.5rem;cursor:pointer">' +
                   '<input type="checkbox" id="incluirAparelhos" checked style="margin-top:.2rem">' +
                   '<span>Regerar tambem a configuracao dos <b>' + aparelhos + ' aparelho(s)</b> que usam o ' +
-                  'aplicativo.<br><small style="color:var(--text-muted)">Sem isso, o aplicativo do cliente ' +
+                  'aplicativo.<br><small style="color:var(--text-light)">Sem isso, o aplicativo do cliente ' +
                   'continua com a configuracao antiga. Com isso, ele fica alguns segundos fora do ar e ' +
                   'busca a nova sozinho.</small></span></label>'
                 : '';
@@ -477,15 +477,9 @@
                         <td class="status-file-cell" data-id="${conn.id}">
                             ${getStatusFileContent(conn)}
                         </td>
-                        <td>
-                            <i class="fa-solid ${conn.internet ? 'fa-globe' : 'fa-ban'}" 
-                               style="color: ${conn.internet ? 'var(--secondary-color)' : 'var(--danger-color)'}; margin-left: 0.5rem;"
-                               title="${conn.internet ? 'Internet Ativa' : 'Internet Bloqueada'}"></i>
-                        </td>
+                        <td>${seloInternet(conn)}</td>
                         <td class="td-actions"><div class="actions">
-                            <button class="btn btn-sm btn-secondary" onclick="toggleInternet(${conn.id})" title="${conn.internet ? 'Bloquear Internet' : 'Desbloquear Internet'}">
-                                <i class="fa-solid ${conn.internet ? 'fa-lock' : 'fa-lock-open'}"></i>
-                            </button>
+                            ${botaoAcesso(conn)}
                             <button class="btn btn-sm btn-secondary btn-icon" onclick="openModal(${conn.id})" title="Editar">
                                 <i class="fa-solid fa-pen"></i>
                             </button>
@@ -899,19 +893,109 @@
             });
         };
 
-        window.toggleInternet = (id) => {
-             // We need to fetch current state or pass it. 
-             // Ideally UI should reflect state optimistically or re-fetch.
-             // For now, let's just call toggle.
-             
+        /*
+         * Tres estados, com TEXTO — nao dois icones e um tooltip.
+         *
+         * Agora que o sistema corta inadimplente sozinho, "cortada" deixou de ser
+         * uma informacao so: o operador precisa saber se o corte foi dele ou do
+         * sistema antes de desfazer. Um title de hover nao serve, porque ninguem
+         * passa o mouse por cinquenta linhas para descobrir.
+         */
+        const ACESSO = {
+            ativa:    ['badge-success', 'fa-globe',        'Ativa'],
+            overdue:  ['badge-danger',  'fa-circle-dollar-to-slot', 'Cortada — sem pagamento'],
+            operator: ['badge-warning', 'fa-hand',         'Cortada pelo operador']
+        };
+
+        function estadoAcesso(conn) {
+            if (conn.internet) return 'ativa';
+            return conn.internet_block_reason === 'overdue' ? 'overdue' : 'operator';
+        }
+
+        function seloInternet(conn) {
+            const [classe, icone, rotulo] = ACESSO[estadoAcesso(conn)];
+            const desde = conn.internet_blocked_at
+                ? ' desde ' + new Date(conn.internet_blocked_at).toLocaleDateString('pt-BR')
+                : '';
+
+            return `<span class="badge ${classe}" title="${rotulo}${desde}" style="white-space:nowrap">
+                        <i class="fa-solid ${icone}"></i> ${rotulo}
+                    </span>`;
+        }
+
+        /*
+         * O rotulo do botao vem do estado REAL, e nao de um booleano.
+         *
+         * Antes ele dizia "Desbloquear Internet" em qualquer linha cortada. Numa
+         * cortada por inadimplencia isso engana duas vezes: o operador acha que
+         * esta desfazendo um bloqueio dele, e o vigia de cobranca corta de novo na
+         * passada seguinte. O aviso disso esta no modal.
+         */
+        function botaoAcesso(conn) {
+            const estado = estadoAcesso(conn);
+            const cortada = estado !== 'ativa';
+
+            const titulo = {
+                ativa:    'Cortar a internet desta conexão',
+                overdue:  'Liberar mesmo com pagamento em aberto',
+                operator: 'Devolver a internet'
+            }[estado];
+
+            const classe = estado === 'overdue' ? 'btn-warning' : 'btn-secondary';
+
+            return `<button class="btn btn-sm ${classe}"
+                            onclick="alterarAcesso(${conn.id})"
+                            title="${titulo}">
+                        <i class="fa-solid ${cortada ? 'fa-lock-open' : 'fa-lock'}"></i>
+                    </button>`;
+        }
+
+        /*
+         * Manda o estado DESEJADO, e nao "inverta".
+         *
+         * Entre a tela desenhar a linha e o operador clicar, o vigia de cobranca
+         * pode ter cortado o cliente. Um toggle cego nesse intervalo faria o
+         * clique que pretendia cortar acabar liberando.
+         */
+        window.alterarAcesso = (id) => {
+            const conn = (cachedConnections || []).find(c => c.id === id);
+            if (!conn) return Toast.show('Conexão não encontrada. Atualize a tela.');
+
+            const estado = estadoAcesso(conn);
+            const querLiberar = estado !== 'ativa';
+
+            let texto;
+            if (!querLiberar) {
+                texto = '<p>A internet desta conexão será <b>cortada</b>: o peer sai do túnel no próximo ' +
+                        'ciclo do provisionador (até ~60s) e o cliente perde o acesso.</p>' +
+                        '<p style="font-size:.85rem;color:var(--text-light)">A configuração e o QR do cliente ' +
+                        'continuam válidos — devolver o acesso depois não exige regerar nada.</p>';
+            } else if (estado === 'overdue') {
+                const desde = conn.internet_blocked_at
+                    ? ' (desde ' + new Date(conn.internet_blocked_at).toLocaleDateString('pt-BR') + ')'
+                    : '';
+                texto = '<p>Esta conexão foi cortada <b>automaticamente por falta de pagamento</b>' + desde + '.</p>' +
+                        '<p>Liberar agora é uma exceção manual. <b>Enquanto o pagamento não entrar, ' +
+                        'o sistema vai cortar de novo</b> na próxima verificação de cobrança.</p>' +
+                        '<p style="font-size:.85rem;color:var(--text-light)">Para liberar em definitivo, ' +
+                        'registre o pagamento no selo da coluna Pagamento.</p>';
+            } else {
+                texto = '<p>A internet será <b>devolvida</b> a esta conexão. O peer volta ao túnel no ' +
+                        'próximo ciclo (até ~60s), com a mesma chave e o mesmo IP — o cliente não ' +
+                        'precisa fazer nada.</p>';
+            }
+
             Modal.show({
-                title: 'Alterar Acesso à Internet',
-                content: `<p>Deseja alterar o status de internet desta conexão?</p>`,
-                confirmText: 'Confirmar',
-                type: 'primary',
+                title: querLiberar ? 'Devolver a internet' : 'Cortar a internet',
+                content: texto,
+                confirmText: querLiberar ? 'Devolver' : 'Cortar',
+                type: querLiberar ? 'primary' : 'danger',
                 onConfirm: async () => {
                     try {
-                        await Connections.toggleInternet(id);
+                        const r = await Connections.setInternet(id, querLiberar);
+                        Toast.show(r && r.aviso
+                            ? r.aviso
+                            : (querLiberar ? 'Internet devolvida.' : 'Internet cortada.'));
                         refreshTable();
                     } catch (error) {
                         Toast.show('Erro ao alterar internet: ' + error.message);
@@ -919,6 +1003,7 @@
                 }
             });
         };
+
     </script>
 </body>
 </html>

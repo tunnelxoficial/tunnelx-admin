@@ -48,9 +48,30 @@ const Connection = sequelize.define('Connection', {
         type: DataTypes.STRING,
         defaultValue: 'payment_pending' // active, inactive, payment_pending
     },
+    /*
+     * Estado EFETIVO de acesso: e este campo que o provisionador le para decidir
+     * se o peer fica ou sai do tunel. Nao e mais enfeite.
+     */
     internet: {
         type: DataTypes.BOOLEAN,
         defaultValue: true
+    },
+    /*
+     * Por que esta cortado: 'operator' (mao do operador) ou 'overdue' (falta de
+     * pagamento). Nulo quando a internet esta ligada.
+     *
+     * Existe para as duas decisoes nao se atropelarem: o pagamento so desfaz um
+     * corte 'overdue'. Um corte que o operador fez de proposito continua de pe
+     * mesmo que uma cobranca antiga seja confirmada depois.
+     */
+    internet_block_reason: {
+        type: DataTypes.STRING(20),
+        allowNull: true
+    },
+    /** Desde quando esta cortado — primeira pergunta de todo atendimento. */
+    internet_blocked_at: {
+        type: DataTypes.DATE,
+        allowNull: true
     },
     config: {
         type: DataTypes.TEXT('long'), // VARCHAR(MAX) equivalent in Sequelize for MSSQL

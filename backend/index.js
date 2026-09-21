@@ -26,6 +26,7 @@ require('./models/ConnectionShare');
 
 const { protectAdmin } = require('./middleware/auth');
 const { limitarLogin, limitarCadastro, limitarConsulta } = require('./middleware/rateLimit');
+const vigiaCobranca = require('./services/vigiaCobranca');
 require('dotenv').config();
 
 const app = express();
@@ -131,4 +132,14 @@ connectDB().then(() => {
     app.listen(PORT, () => {
         console.log(`Server running on http://localhost:${PORT}`);
     });
+
+    /*
+     * So depois do banco de pe: o vigia consulta assinaturas e conexoes na
+     * primeira passada, e subir antes so renderia erro no log.
+     *
+     * E ele que corta o inadimplente quando a carencia vence e devolve a
+     * internet de quem pagou — sem depender de webhook chegar. Ate aqui o
+     * backend nao tinha agendador nenhum.
+     */
+    vigiaCobranca.iniciar();
 });

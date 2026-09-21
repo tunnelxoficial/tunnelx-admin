@@ -666,6 +666,10 @@ label .req { color: var(--danger-color); margin-left: .15rem; }
 .btn-secondary:hover { background-color: var(--bg-subtle); border-color: var(--text-dim); }
 
 .btn-danger { background-color: var(--danger-color); color: #fff; box-shadow: var(--shadow-sm); }
+/* Usada no cadeado de uma conexao cortada por inadimplencia: liberar ali e
+   excecao, nao rotina, e o botao precisa parecer diferente do resto. */
+.btn-warning { background-color: var(--warning-soft); color: var(--warning-color); border: 1px solid #FDE68A; }
+.btn-warning:hover { background-color: #FDE68A; }
 .btn-danger:hover { background-color: var(--danger-dark); }
 
 .btn-ghost { background: transparent; color: var(--text-light); }

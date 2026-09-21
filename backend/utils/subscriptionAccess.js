@@ -75,30 +75,27 @@ function evaluateAccess(sub, agora = new Date()) {
     if (sub.status === 'OVERDUE' || sub.status === 'BLOCKED') {
         // A carência conta do vencimento, não de quando o webhook chegou: um
         // webhook atrasado não pode render dias extras de acesso.
-        const inicio = sub.overdue_since ? new Date(sub.overdue_since) : agora;
-        const diasCorridos = Math.floor((agora - inicio) / MS_POR_DIA);
-        const restantes = DIAS_DE_CARENCIA - diasCorridos;
-
-        if (restantes > 0) {
-            return {
-                allowed: true,
-                state: 'GRACE',
-                daysLeft: restantes,
-                message: restantes === 1
-                    ? 'Pagamento em atraso. Regularize hoje para não perder o acesso.'
-                    : `Pagamento em atraso. Você tem ${restantes} dias para regularizar.`
-            };
-        }
-
-        return {
-            allowed: false,
-            state: 'BLOCKED',
-            daysLeft: 0,
-            message: 'Acesso bloqueado por falta de pagamento. Regularize para voltar a usar.'
-        };
+        return emAtraso(sub.overdue_since ? new Date(sub.overdue_since) : agora, agora);
     }
 
     if (sub.status === 'ACTIVE') {
+        /*
+         * ACTIVE com período vencido também é atraso.
+         *
+         * Antes este ramo devolvia allowed:true sem olhar a data, e o único
+         * caminho para OVERDUE era o webhook PAYMENT_OVERDUE do Asaas chegar.
+         * Webhook que não chega — token trocado, endpoint fora do ar, evento não
+         * assinado no painel — deixava a assinatura ACTIVE para sempre: período
+         * encerrado há meses e acesso liberado, sem ninguém perceber.
+         *
+         * A carência é a mesma, contada do fim do período. Só vale quando a data
+         * existe: sem ela não há o que comparar, e presumir atraso cortaria
+         * cliente em dia por falta de dado.
+         */
+        if (sub.current_period_end && new Date(sub.current_period_end) < agora) {
+            return emAtraso(new Date(sub.current_period_end), agora);
+        }
+
         return { allowed: true, state: 'ACTIVE', daysLeft: null, message: null };
     }
 
@@ -109,6 +106,35 @@ function evaluateAccess(sub, agora = new Date()) {
         state: 'NONE',
         daysLeft: null,
         message: 'Não foi possível verificar sua assinatura. Fale com o suporte.'
+    };
+}
+
+/**
+ * Pagamento vencido: carência primeiro, bloqueio depois.
+ *
+ * @param {Date} inicio  quando o atraso começou (vencimento, não detecção)
+ * @param {Date} agora
+ */
+function emAtraso(inicio, agora) {
+    const diasCorridos = Math.floor((agora - inicio) / MS_POR_DIA);
+    const restantes = DIAS_DE_CARENCIA - diasCorridos;
+
+    if (restantes > 0) {
+        return {
+            allowed: true,
+            state: 'GRACE',
+            daysLeft: restantes,
+            message: restantes === 1
+                ? 'Pagamento em atraso. Regularize hoje para não perder o acesso.'
+                : `Pagamento em atraso. Você tem ${restantes} dias para regularizar.`
+        };
+    }
+
+    return {
+        allowed: false,
+        state: 'BLOCKED',
+        daysLeft: 0,
+        message: 'Acesso bloqueado por falta de pagamento. Regularize para voltar a usar.'
     };
 }
 

@@ -43,7 +43,33 @@ async function acharAssinatura(payment) {
     //    So existe nas assinaturas de cartao; o Pix Automatico nao aceita o campo.
     if (payment.externalReference) {
         const porRef = await Subscription.findByPk(Number(payment.externalReference));
-        if (porRef) return porRef;
+
+        /*
+         * Confere de quem e a assinatura antes de aceita-la.
+         *
+         * externalReference NAO quer dizer a mesma coisa nos dois fluxos: o
+         * aplicativo grava o id da ASSINATURA, e o checkout web grava o id do
+         * CLIENTE. Um findByPk cego pega um numero do segundo fluxo e o usa como
+         * chave do primeiro — e basta que exista uma assinatura cujo id coincida
+         * com aquele id de cliente para o pagamento de uma pessoa ativar (e agora
+         * devolver a internet de) OUTRA.
+         *
+         * A conferencia e barata e fecha isso: se o cliente do Asaas nao bate,
+         * seguimos para os outros vinculos em vez de aceitar o palpite.
+         */
+        if (porRef) {
+            const mesmoCliente = !payment.customer ||
+                !porRef.asaas_customer_id ||
+                porRef.asaas_customer_id === payment.customer;
+
+            if (mesmoCliente) return porRef;
+
+            console.warn(
+                '[webhook] externalReference ' + payment.externalReference +
+                ' aponta para a assinatura ' + porRef.id + ', que e de outro cliente' +
+                ' (' + porRef.asaas_customer_id + ' != ' + payment.customer + '). Ignorando esse vinculo.'
+            );
+        }
     }
 
     // 2. Assinatura do Asaas (cartao).

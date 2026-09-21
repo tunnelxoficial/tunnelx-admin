@@ -86,11 +86,19 @@ const Connections = {
         return await Api.request(`/connections/${id}/reprovision`, 'PATCH', { incluirAparelhos });
     },
 
+    /*
+     * Manda o estado DESEJADO em vez de "inverta".
+     *
+     * Inverter as cegas e uma corrida: entre a tela desenhar a linha e o clique,
+     * o vigia de cobranca pode ter cortado o cliente — e o clique que pretendia
+     * cortar acabaria liberando. Com o valor explicito, a ordem vale o que diz.
+     */
+    async setInternet(id, ligada) {
+        return await Api.request(`/connections/${id}/toggle-internet`, 'PATCH', { internet: !!ligada });
+    },
+
+    /** Compatibilidade: sem corpo, o backend mantem o comportamento de inverter. */
     async toggleInternet(id) {
-        // Since toggle uses PATCH and our Api class doesn't have it explicitly mapped, 
-        // we can add it or just use custom request. Let's add patch support to Api class implicitly 
-        // or just use request here.
-        // Assuming Api class needs PATCH method. Let's add it quickly or use request.
         return await Api.request(`/connections/${id}/toggle-internet`, 'PATCH');
     }
 };
