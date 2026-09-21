@@ -270,6 +270,34 @@
                         description: form.querySelector('[name="description"]').value
                     };
 
+                    /*
+                     * Mudar a velocidade do plano nao retarifa ninguem sozinho.
+                     *
+                     * Cada conexao guarda a propria velocidade, copiada do plano na
+                     * contratacao, e e ela que o provisionador aplica. Propagar em
+                     * silencio apagaria todo ajuste individual ja feito — quem ganhou
+                     * velocidade extra ou quem tem preco antigo voltaria para o padrao
+                     * sem ninguem perceber. Por isso pergunta.
+                     */
+                    if (id) {
+                        const anterior = Number(data.dataLimit);
+                        const nova = Number(payload.dataLimit);
+
+                        if (nova !== anterior) {
+                            payload.aplicarNasConexoes = confirm(
+                                'Velocidade alterada de ' + anterior + ' para ' + nova + ' Mbps.
+
+' +
+                                'Aplicar tambem nas conexoes que ja usam este plano?
+
+' +
+                                'OK  = todos os clientes deste plano passam a ' + nova + ' Mbps.
+' +
+                                'Cancelar = so os novos contratos usam a velocidade nova.'
+                            );
+                        }
+                    }
+
                     try {
                         if (id) {
                             await Plans.update(id, payload);
