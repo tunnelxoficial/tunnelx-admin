@@ -285,14 +285,9 @@
 
                         if (nova !== anterior) {
                             payload.aplicarNasConexoes = confirm(
-                                'Velocidade alterada de ' + anterior + ' para ' + nova + ' Mbps.
-
-' +
-                                'Aplicar tambem nas conexoes que ja usam este plano?
-
-' +
-                                'OK  = todos os clientes deste plano passam a ' + nova + ' Mbps.
-' +
+                                'Velocidade alterada de ' + anterior + ' para ' + nova + ' Mbps.\n\n' +
+                                'Aplicar tambem nas conexoes que ja usam este plano?\n\n' +
+                                'OK  = todos os clientes deste plano passam a ' + nova + ' Mbps.\n' +
                                 'Cancelar = so os novos contratos usam a velocidade nova.'
                             );
                         }
