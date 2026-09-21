@@ -401,7 +401,7 @@
                         </td>
                         <td>${conn.Plan ? conn.Plan.name : '-'}</td>
                         <td>
-                            <span class="badge badge-success">${conn.data_limit} MB</span>
+                            <span class="badge badge-success">${conn.data_limit} Mbps</span>
                         </td>
                          <td>
                             <span style="font-weight: 500;">${conn.total_connections}</span>
@@ -638,7 +638,7 @@
                 <div class="search-select-option ${p.id == currentId ? 'selected' : ''}" 
                      onclick="selectPlan(${p.id}, '${safeName}')">
                     <span class="option-main">${p.name}</span>
-                    <span class="option-sub">${p.dataLimit} MB • R$ ${parseFloat(p.price).toFixed(2).replace('.', ',')}</span>
+                    <span class="option-sub">${p.dataLimit} Mbps • R$ ${parseFloat(p.price).toFixed(2).replace('.', ',')}</span>
                 </div>
             `}).join('');
         };
@@ -668,7 +668,8 @@
                 phone: '', 
                 email: '', 
                 total_connections: 1, 
-                data_limit: 5, // Default 5MB
+                // Sem plano escolhido ainda; a velocidade vem do plano ao selecionar.
+                data_limit: 0,
                 status: 'active', 
                 internet: true 
             };

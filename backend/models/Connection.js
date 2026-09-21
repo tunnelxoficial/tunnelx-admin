@@ -32,7 +32,15 @@ const Connection = sequelize.define('Connection', {
         type: DataTypes.INTEGER,
         defaultValue: 1
     },
-    data_limit: { // Pacote de dados (1MB - 1000MB)
+    /**
+     * VELOCIDADE contratada nesta conexao, em megabits por segundo.
+     *
+     * Copiada do plano na contratacao. O comentario anterior dizia "Pacote de
+     * dados (1MB - 1000MB)" e estava errado: o numero sempre foi taxa, nao
+     * volume. A confusao chegou ate a tela do cliente, que anunciava
+     * "50 MB de velocidade".
+     */
+    data_limit: {
         type: DataTypes.INTEGER,
         allowNull: false
     },

@@ -51,7 +51,7 @@
                                         <th>Nome</th>
                                         <th>Ciclo</th>
                                         <th>Conexões</th>
-                                        <th>Dados</th>
+                                        <th>Velocidade</th>
                                         <th>Valor</th>
                                         <th>Produtos</th>
                                         <th style="text-align: right;">Ações</th>
@@ -102,7 +102,7 @@
                         </td>
                         <td><span class="badge badge-info">${item.cycle}</span></td>
                         <td>${item.total_connections || 1}</td>
-                        <td>${item.dataLimit} MB</td>
+                        <td>${item.dataLimit} Mbps</td>
                         <td>R$ ${parseFloat(item.price).toFixed(2).replace('.', ',')}</td>
                         <td>
                             <span class="badge badge-secondary" title="Produtos vinculados">
@@ -208,8 +208,8 @@
                         </div>
                         <div class="col-md-6">
                             <div class="form-group">
-                                <label>Pacote de Dados (MB)</label>
-                                <input type="number" name="dataLimit" class="form-control" value="${data.dataLimit}" placeholder="Ex: 10" required>
+                                <label>Velocidade (Mbps)</label>
+                                <input type="number" name="dataLimit" class="form-control" value="${data.dataLimit}" placeholder="Ex: 50" required>
                             </div>
                         </div>
                     </div>

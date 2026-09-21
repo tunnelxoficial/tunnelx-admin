@@ -23,8 +23,15 @@ const Plan = sequelize.define('Plan', {
         type: DataTypes.DECIMAL(10, 2),
         allowNull: false
     },
+    /**
+     * VELOCIDADE do plano, em megabits por segundo.
+     *
+     * O nome da coluna e historico e enganoso: nunca foi pacote de dados. Os
+     * valores vendidos hoje sao 8, 16 e 50 — as faixas de uma operadora
+     * brasileira. Megabyte e quantidade; aqui o numero e taxa.
+     */
     dataLimit: {
-        type: DataTypes.INTEGER, // MB
+        type: DataTypes.INTEGER, // Mbps
         allowNull: false
     },
     total_connections: {
